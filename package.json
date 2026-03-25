@@ -1,0 +1,49 @@
+{
+  "name": "@withremyinc/stream",
+  "version": "1.0.0",
+  "description": "Utility-first library for working with Web Streams API in AI systems.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "sideEffects": false,
+  "files": ["dist", "README.md", "LICENSE.md"],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "streams",
+    "readablestream",
+    "transformstream",
+    "web-streams",
+    "async-iterable"
+  ],
+  "scripts": {
+    "build": "tsdown && node rename-dts-entry.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "bench:geojson": "pnpm run build && node scripts/bench-geojson.mjs",
+    "pi": "pi",
+    "prepublishOnly": "npm run build"
+  },
+  "author": "Michael Bullington <michael@withremy.com>",
+  "license": "MIT",
+  "packageManager": "pnpm@10.8.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/withremyinc/stream.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "tsdown": "^0.13.5",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
