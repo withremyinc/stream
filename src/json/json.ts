@@ -1,4 +1,4 @@
-import { pipeThrough, reduce } from "..";
+import { reduce } from "..";
 
 import { parseJSONFromScanner, type ParseOutput } from "./parser";
 import { scanJSON } from "./scanner";
@@ -6,7 +6,48 @@ import { scanJSON } from "./scanner";
 export type JSONParserOutput = ParseOutput;
 
 export function parseJSON(): TransformStream<string, JSONParserOutput> {
-  return pipeThrough(scanJSON(), parseJSONFromScanner());
+  const scanner = scanJSON();
+  const parser = parseJSONFromScanner();
+
+  let writer: WritableStreamDefaultWriter<string>;
+  let reader: ReadableStreamDefaultReader<JSONParserOutput>;
+  let pumpPromise: Promise<void>;
+
+  return new TransformStream<string, JSONParserOutput>({
+    start(controller) {
+      const pipePromise = scanner.readable.pipeTo(parser.writable, {
+        preventCancel: true,
+      });
+
+      writer = scanner.writable.getWriter();
+      reader = parser.readable.getReader();
+      pumpPromise = (async () => {
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+              break;
+            }
+            controller.enqueue(value);
+          }
+          await pipePromise;
+        } catch (error) {
+          controller.error(error);
+          await writer.abort(error).catch(() => {});
+        } finally {
+          reader.releaseLock();
+        }
+      })();
+    },
+    async transform(chunk) {
+      await writer.write(chunk);
+    },
+    async flush() {
+      await writer.close();
+      writer.releaseLock();
+      await pumpPromise;
+    },
+  });
 }
 
 export function jsonToJSObject(): TransformStream<JSONParserOutput, any> {
