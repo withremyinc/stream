@@ -17,7 +17,13 @@
 
 import { performance } from "node:perf_hooks";
 
-import { arrayStream, collect, jsonToJSObject, parseJSON, takeLast } from "../dist/index.js";
+import {
+  arrayStream,
+  collect,
+  jsonToJSObject,
+  parseJSON,
+  takeLast,
+} from "../dist/index.js";
 import {
   dripFeedChunkCount,
   dripFeedReadableStream,
@@ -44,10 +50,11 @@ async function countParseEvents(text) {
   return { n, errors };
 }
 
-async function benchLabel(label, text, catalogNote, options = {}) {
-  const { skipStreamingParse = false, skipStreamingReason } = options;
+async function benchLabel(label, text, catalogNote) {
   const mb = text.length / (1024 * 1024);
-  console.log(`\n── ${label} (${text.length.toLocaleString()} chars, ${mb.toFixed(2)} MiB) ──`);
+  console.log(
+    `\n── ${label} (${text.length.toLocaleString()} chars, ${mb.toFixed(2)} MiB) ──`,
+  );
   if (catalogNote) console.log(catalogNote);
 
   const t0 = performance.now();
@@ -59,11 +66,6 @@ async function benchLabel(label, text, catalogNote, options = {}) {
   );
   if (native?.type === "FeatureCollection" && Array.isArray(native.features)) {
     console.log(`  features: ${native.features.length.toLocaleString()}`);
-  }
-
-  if (skipStreamingParse) {
-    console.log(`parseJSON: skipped — ${skipStreamingReason}`);
-    return;
   }
 
   const t2 = performance.now();
@@ -85,7 +87,9 @@ async function benchLabel(label, text, catalogNote, options = {}) {
       arrayStream(ev).pipeThrough(jsonToJSObject()).pipeThrough(takeLast(1)),
     );
     const t5 = performance.now();
-    console.log(`jsonToJSObject (after full collect): ${(t5 - t4).toFixed(0)} ms`);
+    console.log(
+      `jsonToJSObject (after full collect): ${(t5 - t4).toFixed(0)} ms`,
+    );
     if (value && typeof value === "object" && Array.isArray(value.features)) {
       console.log(`  features: ${value.features.length}`);
     }
@@ -106,11 +110,6 @@ async function main() {
     "California Public Schools 2024-25",
     caText,
     "data.gov: https://catalog.data.gov/dataset/california-public-schools-2024-25",
-    {
-      skipStreamingParse: process.env.CA_STREAMING_PARSE !== "1",
-      skipStreamingReason:
-        "set CA_STREAMING_PARSE=1 to run (very slow / high memory; not representative of JSON.parse).",
-    },
   );
 
   console.log("\nFetching Lake County IL GeoJSON …");
@@ -120,7 +119,9 @@ async function main() {
   await benchLabel("Lake County IL (sample layer)", lcText, null);
 
   if (process.env.FULL_REDUCE !== "1") {
-    console.log("\n(Set FULL_REDUCE=1 to also benchmark jsonToJSObject after collecting all events.)");
+    console.log(
+      "\n(Set FULL_REDUCE=1 to also benchmark jsonToJSObject after collecting all events.)",
+    );
   }
 }
 

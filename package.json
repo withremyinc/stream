@@ -28,6 +28,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "bench:geojson": "pnpm run build && node scripts/bench-geojson.mjs",
+    "bench:xml": "pnpm run build && node scripts/bench-xml.mjs",
     "pi": "pi",
     "prepublishOnly": "npm run build"
   },

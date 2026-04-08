@@ -3,6 +3,7 @@ export * from "./collects";
 export * from "./transforms";
 
 export * from "./json/json";
+export * from "./xml/xml";
 
 /**
  * Merges multiple ReadableStreams into a single stream of chunks as they arrive.
