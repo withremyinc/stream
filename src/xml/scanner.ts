@@ -1,8 +1,4 @@
-import {
-  fromStringGenerator,
-  GENERATOR_END,
-  type StringGeneratorResume,
-} from "../util/generators";
+import { fromStringGenerator, GENERATOR_END } from "../util/generators";
 
 export const enum ScanError {
   UnexpectedEndOfInput = "UnexpectedEndOfInput",
@@ -85,11 +81,7 @@ export type ScanXMLOptions = {
   textMode?: XMLTextMode;
 };
 
-type ScanGenerator<T = void> = Generator<
-  ScanOutput | { next: true },
-  T,
-  StringGeneratorResume
->;
+type ScanGenerator<T = void> = Generator<ScanOutput | { next: true }, T, unknown>;
 
 const enum TagMode {
   None = "None",
@@ -114,16 +106,12 @@ export function scanXML(
   const textMode = options.textMode ?? "coalesced";
 
   return fromStringGenerator(function* (generatorOptions) {
-    const { peek, next, pos, retainFrom } = generatorOptions;
+    const { peek, next, substring, pos, retainFrom, resumedAfterInputExhaustion } = generatorOptions;
     let tagMode = TagMode.None;
     let currentTagIsEnd = false;
     let currentTagName: string | null = null;
     let currentTagIsForeign = false;
     let rawTagName: string | null = null;
-    let lastAdvanceResume: StringGeneratorResume = {
-      inputExhausted: false,
-      closed: false,
-    };
 
     function currentChar(): string | null {
       const value = peek();
@@ -140,7 +128,7 @@ export function scanXML(
     }
 
     function shouldEmitTextDelta(): boolean {
-      return textMode === "delta" && lastAdvanceResume.inputExhausted;
+      return textMode === "delta" && resumedAfterInputExhaustion();
     }
 
     function* emitTextToken(value: string): ScanGenerator {
@@ -161,10 +149,11 @@ export function scanXML(
       return "";
     }
 
-    function* advance(): ScanGenerator<StringGeneratorResume> {
-      lastAdvanceResume = yield next();
-      retainFrom(pos());
-      return lastAdvanceResume;
+    function* advance(retainCurrent: boolean = true): ScanGenerator {
+      yield next();
+      if (retainCurrent) {
+        retainFrom(pos());
+      }
     }
 
     function* skipWhitespace(): ScanGenerator {
@@ -180,15 +169,18 @@ export function scanXML(
         return "";
       }
 
-      let value = "";
+      const start = pos();
+      retainFrom(start);
+      yield* advance(false);
       while (true) {
         const ch = currentChar();
         if (ch === null || !isNameChar(ch)) {
           break;
         }
-        value += ch;
-        yield* advance();
+        yield* advance(false);
       }
+      const value = substring(start, pos());
+      retainFrom(pos());
       return value;
     }
 
@@ -301,26 +293,40 @@ export function scanXML(
 
       yield* advance();
       let value = "";
+      let start = pos();
+      retainFrom(start);
 
       while (true) {
         const ch = currentChar();
         if (ch === null) {
+          value += substring(start, pos());
+          retainFrom(pos());
           yield { error: ScanError.UnterminatedString };
           break;
         }
         if (ch === quote) {
+          value += substring(start, pos());
           yield* advance();
+          retainFrom(pos());
           break;
         }
         if (ch === "&") {
+          value += substring(start, pos());
           value += yield* scanEntityReference();
+          start = pos();
+          retainFrom(start);
           continue;
         }
         if (ch === "<") {
+          value += substring(start, pos());
           yield { error: ScanError.InvalidToken };
+          value += ch;
+          yield* advance(false);
+          start = pos();
+          retainFrom(start);
+          continue;
         }
-        value += ch;
-        yield* advance();
+        yield* advance(false);
       }
 
       yield {
@@ -331,6 +337,8 @@ export function scanXML(
 
     function* scanText(): ScanGenerator {
       let value = "";
+      let start = pos();
+      retainFrom(start);
 
       while (true) {
         const ch = currentChar();
@@ -338,15 +346,24 @@ export function scanXML(
           break;
         }
         if (ch === "&") {
+          value += substring(start, pos());
           value += yield* scanEntityReference();
           value = yield* flushTextDelta(value);
+          start = pos();
+          retainFrom(start);
           continue;
         }
-        value += ch;
-        yield* advance();
-        value = yield* flushTextDelta(value);
+        yield* advance(false);
+        if (shouldEmitTextDelta()) {
+          value += substring(start, pos());
+          value = yield* flushTextDelta(value);
+          start = pos();
+          retainFrom(start);
+        }
       }
 
+      value += substring(start, pos());
+      retainFrom(pos());
       yield* emitTextToken(value);
     }
 

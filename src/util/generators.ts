@@ -12,11 +12,6 @@ export type GeneratorWithNext<TYield, TNext = unknown, TReturn = void> = Generat
   TNext
 >;
 
-export type StringGeneratorResume = {
-  inputExhausted: boolean;
-  closed: boolean;
-};
-
 const TOKEN_COMPACT_THRESHOLD = 4_096;
 const STRING_COMPACT_THRESHOLD = 256;
 
@@ -131,12 +126,11 @@ export type StringGeneratorFactoryOptions = {
   substring: (start: number, end: number) => string;
   pos: () => number;
   retainFrom: (position: number) => void;
+  resumedAfterInputExhaustion: () => boolean;
 };
 
 export function fromStringGenerator<T1>(
-  factory: (
-    options: StringGeneratorFactoryOptions,
-  ) => GeneratorWithNext<T1, StringGeneratorResume>,
+  factory: (options: StringGeneratorFactoryOptions) => GeneratorWithNext<T1>,
 ): TransformStream<string, T1> {
   let tokens = "";
   let closed = false;
@@ -194,10 +188,11 @@ export function fromStringGenerator<T1>(
     base = retain;
   }
 
-  let pendingResume: StringGeneratorResume = {
-    inputExhausted: false,
-    closed,
-  };
+  let resumeInputExhausted = false;
+
+  function resumedAfterInputExhaustion(): boolean {
+    return resumeInputExhausted;
+  }
 
   const generator = factory({
     peek,
@@ -205,6 +200,7 @@ export function fromStringGenerator<T1>(
     substring,
     pos,
     retainFrom,
+    resumedAfterInputExhaustion,
   });
 
   function runGeneratorUntilNeedingMoreTokens(
@@ -218,16 +214,8 @@ export function fromStringGenerator<T1>(
     }
 
     while (true) {
-      const resume = {
-        inputExhausted: pendingResume.inputExhausted,
-        closed,
-      };
-      pendingResume = {
-        inputExhausted: false,
-        closed,
-      };
-
-      const { value, done } = generator.next(resume);
+      const { value, done } = generator.next();
+      resumeInputExhausted = false;
       if (done) {
         compactTokens();
         return;
@@ -235,14 +223,9 @@ export function fromStringGenerator<T1>(
 
       if (isNextSignal(value)) {
         compactTokens();
-        if (relativePos() >= tokens.length) {
-          pendingResume = {
-            inputExhausted: true,
-            closed,
-          };
-          if (!closed) {
-            return;
-          }
+        if (relativePos() >= tokens.length && !closed) {
+          resumeInputExhausted = true;
+          return;
         }
       } else {
         controller.enqueue(value as T1);

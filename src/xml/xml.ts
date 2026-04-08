@@ -24,55 +24,26 @@ export type XMLExtractOptions = {
 
 export type { XMLAttribute, XMLExtractOutput, XMLTextMode };
 
-function connectTransforms<In, Mid, Out>(
+function composeTransforms<In, Mid, Out>(
   first: TransformStream<In, Mid>,
   second: TransformStream<Mid, Out>,
 ): TransformStream<In, Out> {
-  let writer: WritableStreamDefaultWriter<In>;
-  let reader: ReadableStreamDefaultReader<Out>;
-  let pumpPromise: Promise<void>;
+  void first.readable
+    .pipeTo(second.writable, {
+      preventCancel: true,
+    })
+    .catch(() => {});
 
-  return new TransformStream<In, Out>({
-    start(controller) {
-      const pipePromise = first.readable.pipeTo(second.writable, {
-        preventCancel: true,
-      });
-
-      writer = first.writable.getWriter();
-      reader = second.readable.getReader();
-      pumpPromise = (async () => {
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) {
-              break;
-            }
-            controller.enqueue(value);
-          }
-          await pipePromise;
-        } catch (error) {
-          controller.error(error);
-          await writer.abort(error).catch(() => {});
-        } finally {
-          reader.releaseLock();
-        }
-      })();
-    },
-    async transform(chunk) {
-      await writer.write(chunk);
-    },
-    async flush() {
-      await writer.close();
-      writer.releaseLock();
-      await pumpPromise;
-    },
-  });
+  return {
+    writable: first.writable,
+    readable: second.readable,
+  } as TransformStream<In, Out>;
 }
 
 export function parseXML(
   options: XMLParserOptions = {},
 ): TransformStream<string, XMLParserOutput> {
-  return connectTransforms(scanXML(options), parseXMLFromScanner());
+  return composeTransforms(scanXML(options), parseXMLFromScanner());
 }
 
 /**
@@ -90,7 +61,7 @@ export function extractXML(
 ): TransformStream<string, XMLExtractOutput> {
   const allowTags = [...new Set(options.allowTags)];
 
-  return connectTransforms(
+  return composeTransforms(
     scanXML({ foreignTags: allowTags, textMode: options.textMode }),
     extractXMLFromScanner({ allowTags: new Set(allowTags) }),
   );
