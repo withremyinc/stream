@@ -9,6 +9,7 @@ import {
   takeLast,
   drop,
   flatMap,
+  scan,
   reduce,
   toArray,
   forEach,
@@ -183,6 +184,44 @@ describe("transforms", () => {
       );
       const result = await collect(stream);
       expect(result).toEqual(["a0", "b1", "c2"]);
+    });
+  });
+
+  describe("scan", () => {
+    it("should emit each intermediate accumulator value", async () => {
+      const result = await testTransform(
+        scan<number, number>((acc, x) => acc + x, 0),
+        numbers,
+      );
+      expect(result).toEqual([1, 3, 6, 10, 15]);
+    });
+    it("should work with async reducer", async () => {
+      const result = await testTransform(
+        scan<number, number>(async (acc, x) => acc + x, 0),
+        numbers,
+      );
+      expect(result).toEqual([1, 3, 6, 10, 15]);
+    });
+    it("should provide index to reducer", async () => {
+      const result = await testTransform(
+        scan<number, string>((acc, x, i) => `${acc}[${i}:${x}]`, ""),
+        [10, 20, 30],
+      );
+      expect(result).toEqual(["[0:10]", "[0:10][1:20]", "[0:10][1:20][2:30]"]);
+    });
+    it("should return empty for empty stream", async () => {
+      const result = await testTransform(
+        scan<number, number>((acc, x) => acc + x, 0),
+        [],
+      );
+      expect(result).toEqual([]);
+    });
+    it("should work with a single element", async () => {
+      const result = await testTransform(
+        scan<number, number>((acc, x) => acc * x, 1),
+        [5],
+      );
+      expect(result).toEqual([5]);
     });
   });
 

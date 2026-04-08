@@ -139,6 +139,26 @@ export function flatMap<T, U>(
 }
 
 /**
+ * Accumulates chunks and emits each intermediate accumulator value (rolling reduce).
+ * @param reducer - Function combining accumulator and chunk.
+ * @param initialValue - Initial accumulator value.
+ * @returns TransformStream emitting each intermediate accumulator.
+ */
+export function scan<T, U>(
+  reducer: (accumulator: U, chunk: T, index: number) => U | Promise<U>,
+  initialValue: U,
+): TransformStream<T, U> {
+  let accumulator = initialValue;
+  let idx = 0;
+  return new TransformStream<T, U>({
+    async transform(chunk, controller) {
+      accumulator = await reducer(accumulator, chunk, idx++);
+      controller.enqueue(accumulator);
+    },
+  });
+}
+
+/**
  * Accumulates chunks into a single result, emitting it on completion.
  * @param reducer - Function combining accumulator and chunk.
  * @param initialValue - Initial accumulator value.
