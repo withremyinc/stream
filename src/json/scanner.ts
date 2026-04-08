@@ -56,11 +56,12 @@ export function scanJSON() {
     peekCharCode: () => number,
     options: StringGeneratorFactoryOptions,
   ): GeneratorWithNext<ScanOutput> {
-    const { next, substring, pos } = options;
+    const { next, substring, pos, retainFrom } = options;
 
     yield next();
     let value = "";
     let start = pos();
+    retainFrom(start);
 
     // SCAN STRING
     {
@@ -146,6 +147,7 @@ export function scanJSON() {
               };
           }
           start = pos();
+          retainFrom(start);
           continue;
         }
         if (ch > 0 && ch <= 0x1f) {
@@ -163,6 +165,7 @@ export function scanJSON() {
         yield next();
       }
     }
+    retainFrom(pos());
     yield { token: SyntaxKind.StringLiteral, value };
   }
 
@@ -170,7 +173,7 @@ export function scanJSON() {
     peekCharCode: () => number,
     options: StringGeneratorFactoryOptions,
   ): GeneratorWithNext<ScanOutput> {
-    const { next, substring, pos } = options;
+    const { next, substring, pos, retainFrom } = options;
     const code = peekCharCode();
     let value = "";
 
@@ -190,6 +193,7 @@ export function scanJSON() {
     // SCAN NUMBER
     {
       const start = pos();
+      retainFrom(start);
       if (peekCharCode() === CharacterCodes._0) {
         yield next();
       } else {
@@ -232,6 +236,7 @@ export function scanJSON() {
         }
       }
       value += substring(start, end);
+      retainFrom(pos());
     }
 
     yield {
@@ -241,7 +246,7 @@ export function scanJSON() {
   }
 
   return fromStringGenerator(function* (options) {
-    const { peek, next, substring, pos } = options;
+    const { peek, next, substring, pos, retainFrom } = options;
     function peekCharCode(): number {
       const code = peek();
       if (code === GENERATOR_END) {
@@ -325,7 +330,8 @@ export function scanJSON() {
           if (peekCharCode() === CharacterCodes.slash) {
             do {
               yield next();
-              if (isLineBreak(peekCharCode())) {
+              const ch = peekCharCode();
+              if (ch === EOF || isLineBreak(ch)) {
                 break;
               }
             } while (true);
@@ -378,6 +384,7 @@ export function scanJSON() {
         // literals and unknown symbols
         default: {
           // is a literal? Read the full word.
+          retainFrom(tokenOffset);
           while (isUnknownContentCharacter(code)) {
             yield next();
             code = peekCharCode();
@@ -385,6 +392,7 @@ export function scanJSON() {
 
           if (tokenOffset !== pos()) {
             const value = substring(tokenOffset, pos()).trim();
+            retainFrom(pos());
             // keywords: true, false, null
             switch (value) {
               case "true":
@@ -402,6 +410,7 @@ export function scanJSON() {
             continue outerLoop;
           }
 
+          retainFrom(pos());
           // some
           yield next();
         }

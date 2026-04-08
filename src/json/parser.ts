@@ -111,6 +111,23 @@ export function parseJSONFromScanner(): TransformStream<
   // to not affect visitor functions which stored a reference to a previous JSONPath
   const _jsonPath: JSONPath = [];
 
+  function cloneJSONPath(): JSONPath {
+    switch (_jsonPath.length) {
+      case 0:
+        return [];
+      case 1:
+        return [_jsonPath[0]];
+      case 2:
+        return [_jsonPath[0], _jsonPath[1]];
+      case 3:
+        return [_jsonPath[0], _jsonPath[1], _jsonPath[2]];
+      case 4:
+        return [_jsonPath[0], _jsonPath[1], _jsonPath[2], _jsonPath[3]];
+      default:
+        return _jsonPath.slice();
+    }
+  }
+
   function* handleError(
     error: ParseErrorCode,
     options: GeneratorFactoryOptions<ScanOutput>,
@@ -152,7 +169,7 @@ export function parseJSONFromScanner(): TransformStream<
       yield {
         type: "onLiteralValue",
         value,
-        path: structuredClone(_jsonPath),
+        path: cloneJSONPath(),
       };
     } else if (matchesToken(token, SyntaxKind.NumericLiteral)) {
       consumedLiteral = true;
@@ -164,7 +181,7 @@ export function parseJSONFromScanner(): TransformStream<
       yield {
         type: "onLiteralValue",
         value,
-        path: structuredClone(_jsonPath),
+        path: cloneJSONPath(),
       };
     } else if (matchesToken(token, SyntaxKind.TrueKeyword)) {
       consumedLiteral = true;
@@ -172,7 +189,7 @@ export function parseJSONFromScanner(): TransformStream<
       yield {
         type: "onLiteralValue",
         value,
-        path: structuredClone(_jsonPath),
+        path: cloneJSONPath(),
       };
     } else if (matchesToken(token, SyntaxKind.FalseKeyword)) {
       consumedLiteral = true;
@@ -180,14 +197,14 @@ export function parseJSONFromScanner(): TransformStream<
       yield {
         type: "onLiteralValue",
         value,
-        path: structuredClone(_jsonPath),
+        path: cloneJSONPath(),
       };
     } else if (matchesToken(token, SyntaxKind.NullKeyword)) {
       consumedLiteral = true;
       yield {
         type: "onLiteralValue",
         value: null,
-        path: structuredClone(_jsonPath),
+        path: cloneJSONPath(),
       };
     }
 
@@ -216,7 +233,7 @@ export function parseJSONFromScanner(): TransformStream<
     yield {
       type: "onObjectProperty",
       name: stringValue,
-      path: structuredClone(_jsonPath),
+      path: cloneJSONPath(),
     };
     // add property name afterwards
     _jsonPath.push(stringValue);
@@ -256,7 +273,7 @@ export function parseJSONFromScanner(): TransformStream<
 
     yield {
       type: "onObjectBegin",
-      path: structuredClone(_jsonPath),
+      path: cloneJSONPath(),
     };
     yield next(); // consume open brace
 
@@ -300,7 +317,7 @@ export function parseJSONFromScanner(): TransformStream<
 
     yield {
       type: "onObjectEnd",
-      path: structuredClone(_jsonPath),
+      path: cloneJSONPath(),
     };
 
     if (!matchesToken(peek(), SyntaxKind.CloseBraceToken)) {
@@ -322,7 +339,7 @@ export function parseJSONFromScanner(): TransformStream<
 
     yield {
       type: "onArrayBegin",
-      path: structuredClone(_jsonPath),
+      path: cloneJSONPath(),
     };
 
     yield next(); // consume open bracket
@@ -373,7 +390,7 @@ export function parseJSONFromScanner(): TransformStream<
     }
     yield {
       type: "onArrayEnd",
-      path: structuredClone(_jsonPath),
+      path: cloneJSONPath(),
     };
     if (!isFirstElement) {
       _jsonPath.pop(); // remove array index

@@ -4,7 +4,11 @@ import { collect, arrayStream } from "../../index";
 import { ScanError, scanJSON, SyntaxKind, type ScanOutput } from "../scanner";
 
 async function getTokens(text: string): Promise<ScanOutput[]> {
-  return await collect(arrayStream([...text]).pipeThrough(scanJSON()));
+  return await getTokensFromChunks([...text]);
+}
+
+async function getTokensFromChunks(chunks: string[]): Promise<ScanOutput[]> {
+  return await collect(arrayStream(chunks).pipeThrough(scanJSON()));
 }
 
 describe("JSON", () => {
@@ -213,6 +217,35 @@ describe("JSON", () => {
     // Comments are ignored (become Trivia or skipped entirely depending on scanner options, let's assume skipped here)
     expect(await getTokens("false//hello")).toEqual([
       { token: SyntaxKind.FalseKeyword, value: "false" },
+    ]);
+  });
+
+  test("supports multi-character chunks spanning boundaries", async () => {
+    expect(
+      await getTokensFromChunks([
+        '{"na',
+        'me":"x',
+        '\\u00DC",',
+        '"ok":tr',
+        'ue,/*c',
+        'omment*/',
+        '"n":1.2',
+        'E-3}',
+      ]),
+    ).toEqual([
+      { token: SyntaxKind.OpenBraceToken },
+      { token: SyntaxKind.StringLiteral, value: "name" },
+      { token: SyntaxKind.ColonToken },
+      { token: SyntaxKind.StringLiteral, value: "xÜ" },
+      { token: SyntaxKind.CommaToken },
+      { token: SyntaxKind.StringLiteral, value: "ok" },
+      { token: SyntaxKind.ColonToken },
+      { token: SyntaxKind.TrueKeyword, value: "true" },
+      { token: SyntaxKind.CommaToken },
+      { token: SyntaxKind.StringLiteral, value: "n" },
+      { token: SyntaxKind.ColonToken },
+      { token: SyntaxKind.NumericLiteral, value: "1.2E-3" },
+      { token: SyntaxKind.CloseBraceToken },
     ]);
   });
 });

@@ -3,10 +3,16 @@ import { test, describe, expect } from "vitest";
 import { arrayStream, collect, takeLast } from "../..";
 import { jsonToJSObject, parseJSON } from "../json";
 
+async function collectEvents(chunks: string[]) {
+  return await collect(arrayStream(chunks).pipeThrough(parseJSON()));
+}
+
 async function assertValidParse(input: string, expected: unknown) {
-  const events = await collect(
-    arrayStream([...input]).pipeThrough(parseJSON()),
-  );
+  await assertValidParseChunks([...input], expected);
+}
+
+async function assertValidParseChunks(chunks: string[], expected: unknown) {
+  const events = await collectEvents(chunks);
   const errors = events.filter((e) => e.type === "onError");
   expect(errors).toHaveLength(0);
   const [value] = await collect(
@@ -18,9 +24,7 @@ async function assertValidParse(input: string, expected: unknown) {
 }
 
 async function assertInvalidParse(input: string, expectedPartial: unknown) {
-  const events = await collect(
-    arrayStream([...input]).pipeThrough(parseJSON()),
-  );
+  const events = await collectEvents([...input]);
   expect(events.some((e) => e.type === "onError")).toBe(true);
   const [partial] = await collect(
     arrayStream(events)
@@ -135,5 +139,31 @@ describe("parse", () => {
     });
     await assertValidParse("[ 1, 2, ]", [1, 2]);
     await assertValidParse("[ 1, 2 ]", [1, 2]);
+  });
+
+  test("multi-character chunks spanning token boundaries", async () => {
+    await assertValidParseChunks(
+      [
+        '{ "a": [1',
+        ', 2, {"b": "x',
+        '\\u00DC"}], ',
+        '"c": t',
+        'rue /* done */ }',
+      ],
+      {
+        a: [1, 2, { b: "xÜ" }],
+        c: true,
+      },
+    );
+  });
+
+  test("long chunked arrays survive buffer compaction", async () => {
+    const expected = Array.from({ length: 15_000 }, (_, i) => i);
+    const input = JSON.stringify(expected);
+    const chunks: string[] = [];
+    for (let i = 0; i < input.length; i += 5) {
+      chunks.push(input.slice(i, i + 5));
+    }
+    await assertValidParseChunks(chunks, expected);
   });
 });

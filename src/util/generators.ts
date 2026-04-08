@@ -8,27 +8,45 @@ export const GENERATOR_END = Symbol("GENERATOR_END");
 
 export type GeneratorWithNext<T> = Generator<T | { next: true }>;
 
+const TOKEN_COMPACT_THRESHOLD = 4_096;
+const STRING_COMPACT_THRESHOLD = 256;
+
 export type GeneratorFactoryOptions<T0> = {
   peek: () => T0 | typeof GENERATOR_END;
   next: () => { next: true };
   pos: () => number;
 };
 
+function isNextSignal<T>(
+  value: T | { next: true } | undefined,
+): value is { next: true } {
+  return value !== null && value !== undefined && typeof value === "object" && "next" in value;
+}
+
 export function fromGenerator<T0, T1>(
   factory: (options: GeneratorFactoryOptions<T0>) => GeneratorWithNext<T1>,
 ): TransformStream<T0, T1> {
   let tokens: T0[] = [];
   let closed = false;
-  let idx: number = 0;
+  let idx = 0;
+  let base = 0;
+
+  function relativePos(position: number = idx): number {
+    return position - base;
+  }
 
   function peek(): T0 | typeof GENERATOR_END {
+    const relative = relativePos();
+    if (relative < 0) {
+      throw new Error("Tokens index fell behind compacted buffer");
+    }
+    if (relative < tokens.length) {
+      return tokens[relative];
+    }
     if (closed) {
       return GENERATOR_END;
     }
-    if (idx >= tokens.length) {
-      throw new Error("Tokens index out of range");
-    }
-    return tokens[idx];
+    throw new Error("Tokens index out of range");
   }
 
   function next(): { next: true } {
@@ -40,6 +58,15 @@ export function fromGenerator<T0, T1>(
     return idx;
   }
 
+  function compactTokens() {
+    const consumed = idx - base;
+    if (consumed < TOKEN_COMPACT_THRESHOLD) {
+      return;
+    }
+    tokens = tokens.slice(consumed);
+    base = idx;
+  }
+
   const generator = factory({
     peek,
     next,
@@ -49,29 +76,27 @@ export function fromGenerator<T0, T1>(
   function runGeneratorUntilNeedingMoreTokens(
     controller: TransformStreamDefaultController<T1>,
   ) {
-    if (idx === 0 && tokens.length === 0) {
+    if (idx === base && tokens.length === 0) {
       return;
     }
-    if (idx >= tokens.length && !closed) {
+    if (relativePos() >= tokens.length && !closed) {
       return;
     }
 
     while (true) {
       const { value, done } = generator.next();
-      if (!value) {
-        break;
+      if (done) {
+        compactTokens();
+        return;
       }
 
-      if ("next" in value) {
-        if (idx >= tokens.length) {
+      if (isNextSignal(value)) {
+        compactTokens();
+        if (relativePos() >= tokens.length && !closed) {
           return;
         }
       } else {
-        controller.enqueue(value);
-      }
-
-      if (done) {
-        return;
+        controller.enqueue(value as T1);
       }
     }
   }
@@ -96,23 +121,34 @@ export type StringGeneratorFactoryOptions = {
   next: () => { next: true };
   substring: (start: number, end: number) => string;
   pos: () => number;
+  retainFrom: (position: number) => void;
 };
 
 export function fromStringGenerator<T1>(
   factory: (options: StringGeneratorFactoryOptions) => GeneratorWithNext<T1>,
 ): TransformStream<string, T1> {
-  let tokens: string = "";
+  let tokens = "";
   let closed = false;
-  let idx: number = 0;
+  let idx = 0;
+  let base = 0;
+  let retainedFrom = 0;
+
+  function relativePos(position: number = idx): number {
+    return position - base;
+  }
 
   function peek(): string | typeof GENERATOR_END {
+    const relative = relativePos();
+    if (relative < 0) {
+      throw new Error("String index fell behind compacted buffer");
+    }
+    if (relative < tokens.length) {
+      return tokens[relative];
+    }
     if (closed) {
       return GENERATOR_END;
     }
-    if (idx >= tokens.length) {
-      throw new Error("Tokens index out of range");
-    }
-    return tokens[idx];
+    throw new Error("Tokens index out of range");
   }
 
   function next(): { next: true } {
@@ -121,11 +157,30 @@ export function fromStringGenerator<T1>(
   }
 
   function substring(start: number, end: number): string {
-    return tokens.substring(start, end);
+    const relativeStart = relativePos(start);
+    const relativeEnd = relativePos(end);
+    if (relativeStart < 0 || relativeEnd < 0) {
+      throw new Error("Substring position fell behind compacted buffer");
+    }
+    return tokens.substring(relativeStart, relativeEnd);
   }
 
   function pos(): number {
     return idx;
+  }
+
+  function retainFrom(position: number) {
+    retainedFrom = position;
+  }
+
+  function compactTokens() {
+    const retain = Math.min(retainedFrom, idx);
+    const drop = retain - base;
+    if (drop < STRING_COMPACT_THRESHOLD) {
+      return;
+    }
+    tokens = tokens.slice(drop);
+    base = retain;
   }
 
   const generator = factory({
@@ -133,40 +188,40 @@ export function fromStringGenerator<T1>(
     next,
     substring,
     pos,
+    retainFrom,
   });
 
   function runGeneratorUntilNeedingMoreTokens(
     controller: TransformStreamDefaultController<T1>,
   ) {
-    if (idx === 0 && tokens.length === 0) {
+    if (idx === base && tokens.length === 0) {
       return;
     }
-    if (idx >= tokens.length && !closed) {
+    if (relativePos() >= tokens.length && !closed) {
       return;
     }
 
     while (true) {
       const { value, done } = generator.next();
-      if (!value) {
-        break;
+      if (done) {
+        compactTokens();
+        return;
       }
 
-      if ("next" in value) {
-        if (idx >= tokens.length) {
+      if (isNextSignal(value)) {
+        compactTokens();
+        if (relativePos() >= tokens.length && !closed) {
           return;
         }
       } else {
-        controller.enqueue(value);
-      }
-
-      if (done) {
-        return;
+        controller.enqueue(value as T1);
       }
     }
   }
 
   return new TransformStream<string, T1>({
     start(controller) {
+      retainedFrom = idx;
       runGeneratorUntilNeedingMoreTokens(controller);
     },
     transform(chunk, controller) {
