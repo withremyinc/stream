@@ -1,6 +1,6 @@
 # @withremyinc/stream
 
-Utility-first helpers for the [Web Streams API](https://developer.mozilla.org/en-US/docs/Web/API/Streams_API), aimed at streaming and transform pipelines (including AI-style flows).
+Utility-first helpers for the [Web Streams API](https://developer.mozilla.org/en-US/docs/Web/API/Streams_API), aimed at LLM text streaming pipelines.
 
 ## Installation
 
@@ -57,6 +57,30 @@ const events = await collect(
 ```
 
 With `foreignTags`, the tag body is treated as opaque raw text, so the payload inside `<instructions>` arrives as `onText` instead of nested XML events.
+
+Exact `parseXML({ foreignTags: ["instructions"] })` output example:
+
+```ts
+const events = await collect(
+  arrayStream([
+    '<root><instructions>use <tool>bash</tool> & keep x < 3</instructions><tail>ok</tail></root>',
+  ]).pipeThrough(parseXML({ foreignTags: ["instructions"] })),
+);
+
+// events
+[
+  { type: "onDocumentBegin" },
+  { type: "onElementBegin", name: "root", attributes: [] },
+  { type: "onElementBegin", name: "instructions", attributes: [] },
+  { type: "onText", value: "use <tool>bash</tool> & keep x < 3" },
+  { type: "onElementEnd", name: "instructions" },
+  { type: "onElementBegin", name: "tail", attributes: [] },
+  { type: "onText", value: "ok" },
+  { type: "onElementEnd", name: "tail" },
+  { type: "onElementEnd", name: "root" },
+  { type: "onDocumentEnd" },
+]
+```
 
 Need incremental text chunks instead of fully coalesced text nodes? Use `textMode: "delta"`:
 
@@ -122,18 +146,6 @@ const events = await collect(
 ]
 ```
 
-XML support is intentionally scoped to a practical v1 parser:
-
-- supports elements, attributes, text, comments, CDATA, processing instructions, XML declarations, and predefined/numeric entities
-- accepts XML fragments, including multiple top-level nodes and top-level text
-- supports `foreignTags` for opaque raw-text islands like `instructions`, `code`, or `prompt`
-- supports `textMode: "delta"` for incrementally emitted `onText` events
-- includes `extractXML()` for flat allowlisted extraction from mixed LLM output
-- recovers from common structural issues by emitting `onError` and continuing when possible
-- **does not** build a DOM
-- **does not** do DTD parsing, entity declarations, external entity resolution, schema validation, or namespace resolution
-- **does not** provide `xmlToJSObject()`
-
 Recovery example:
 
 ```ts
@@ -148,31 +160,9 @@ That stream still produces useful events:
 - `onError(DuplicateAttribute)` and `<a>` with the **last** `x` value
 - `onError(MismatchedTag)` with recovery by auto-closing `<b>` before `</a>`
 
-See [`docs/xml-v1.md`](docs/xml-v1.md) for the locked scope, recovery policy, `foreignTags`, extractor semantics, and non-goals.
-
 ## Development
 
 Remaining ideas and roadmap:
-
-### Still needed
-
-- tee
-- filterMap
-- drip feed by tokens
-- extractDelimiter
-- parseMarkdown
-
-### JSON / streaming
-
-- Performance tuning for very large payloads (streaming `parseJSON` is far slower than `JSON.parse` today; see bench below).
-
-**GeoJSON benchmark (data.gov–listed files, requires network):**
-
-```bash
-pnpm run bench:geojson
-```
-
-Downloads **California Public Schools 2024-25** (~17 MiB; [catalog entry](https://catalog.data.gov/dataset/california-public-schools-2024-25)) and times **`JSON.parse`**; streaming **`parseJSON`** is skipped by default on that file (`CA_STREAMING_PARSE=1` to force it — expect a long run and high memory use). A second, smaller ArcGIS GeoJSON (~0.4 MiB) is used to compare **`JSON.parse`** vs streaming event walk.
 
 ### Scripts
 

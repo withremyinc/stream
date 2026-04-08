@@ -34,6 +34,194 @@ export function filter<T>(
 }
 
 /**
+ * Maps each chunk to a value and drops only nullish results.
+ * @param mapper - Function returning a mapped value or null/undefined to skip.
+ * @returns TransformStream emitting only non-nullish mapped values.
+ */
+export function filterMap<T, U>(
+  mapper: (
+    chunk: T,
+    index: number,
+  ) => U | null | undefined | Promise<U | null | undefined>,
+): TransformStream<T, NonNullable<U>> {
+  let counter = 0;
+  return new TransformStream<T, NonNullable<U>>({
+    async transform(chunk, controller) {
+      const result = await mapper(chunk, counter++);
+      if (result != null) {
+        controller.enqueue(result as NonNullable<U>);
+      }
+    },
+  });
+}
+
+export type ExtractDelimiterOptions = {
+  /**
+   * Fence marker used for both opening and closing lines.
+   * Defaults to Markdown triple backticks.
+   */
+  delimiter?: string;
+  /**
+   * Allowed first-token fence labels (for example: "json", "xml", "markdown").
+   * Matching is case-insensitive. Use "" to match unlabeled fences.
+   * If omitted, the first fenced block of any label is extracted.
+   */
+  allowLanguages?: readonly string[];
+};
+
+type ExtractDelimiterMode = "searching" | "skipping" | "capturing" | "done";
+
+/** Strip trailing \n, \r\n, or lone \r from a line. */
+function stripLineEnding(line: string): string {
+  if (line.endsWith("\r\n")) return line.slice(0, -2);
+  if (line.endsWith("\n") || line.endsWith("\r")) return line.slice(0, -1);
+  return line;
+}
+
+/**
+ * If `line` is a valid opening fence, return the lowercase language token
+ * ("" for bare fences). Otherwise return null.
+ */
+function getFenceLanguage(line: string, delimiter: string): string | null {
+  const stripped = stripLineEnding(line);
+  if (!stripped.startsWith(delimiter)) return null;
+
+  const infoString = stripped.slice(delimiter.length).trim();
+  if (infoString === "") return "";
+
+  const [token] = infoString.split(/\s+/, 1);
+  return token!.toLowerCase();
+}
+
+function isClosingFence(line: string, delimiter: string): boolean {
+  const stripped = stripLineEnding(line);
+  return stripped.startsWith(delimiter) && stripped.slice(delimiter.length).trim() === "";
+}
+
+/**
+ * Could `prefix` still grow into a closing fence line?
+ * Used during capture to decide whether to keep buffering at line start.
+ */
+function couldBeClosingFence(prefix: string, delimiter: string): boolean {
+  if (prefix.length <= delimiter.length) {
+    return delimiter.startsWith(prefix);
+  }
+  return prefix.startsWith(delimiter) && /^[\t \r]*$/.test(prefix.slice(delimiter.length));
+}
+
+/**
+ * Extracts the body of the first matching fenced block as a string stream.
+ *
+ * Opening and closing fence lines are removed. Output is emitted incrementally
+ * as body text becomes safe to release, so it can be piped into downstream
+ * processors like `parseJSON()` or `extractXML()`.
+ */
+export function extractDelimiter(
+  options: ExtractDelimiterOptions = {},
+): TransformStream<string, string> {
+  const delimiter = options.delimiter ?? "```";
+  if (delimiter.length === 0 || /[\r\n]/.test(delimiter)) {
+    throw new RangeError("delimiter must be a non-empty string without line breaks");
+  }
+
+  const allowSet = options.allowLanguages
+    ? new Set(options.allowLanguages.map((l) => l.toLowerCase()))
+    : null;
+
+  let mode: ExtractDelimiterMode = "searching";
+  let lineBuffer = "";
+  let atLineStart = true;
+  let probe = "";
+
+  function processLine(line: string): void {
+    if (mode === "searching") {
+      const language = getFenceLanguage(line, delimiter);
+      if (language == null) return;
+      mode = (allowSet === null || allowSet.has(language)) ? "capturing" : "skipping";
+      atLineStart = true;
+      probe = "";
+    } else if (mode === "skipping") {
+      if (isClosingFence(line, delimiter)) mode = "searching";
+    }
+  }
+
+  return new TransformStream<string, string>({
+    transform(chunk, controller) {
+      if (mode === "done") return;
+
+      let output = "";
+      let i = 0;
+
+      while (i < chunk.length) {
+        // --- searching / skipping: buffer full lines ---
+        if (mode === "searching" || mode === "skipping") {
+          const nl = chunk.indexOf("\n", i);
+          if (nl === -1) {
+            lineBuffer += chunk.slice(i);
+            break;
+          }
+          lineBuffer += chunk.slice(i, nl + 1);
+          processLine(lineBuffer);
+          lineBuffer = "";
+          i = nl + 1;
+          continue;
+        }
+
+        // --- capturing: probe at line start for closing fence ---
+        if (atLineStart) {
+          probe += chunk[i];
+          i++;
+
+          if (probe.endsWith("\n")) {
+            if (isClosingFence(probe, delimiter)) {
+              if (output !== "") controller.enqueue(output);
+              mode = "done";
+              controller.terminate();
+              return;
+            }
+            output += probe;
+            probe = "";
+            continue;
+          }
+
+          if (!couldBeClosingFence(probe, delimiter)) {
+            output += probe;
+            probe = "";
+            atLineStart = false;
+          }
+          continue;
+        }
+
+        // --- capturing: mid-line bulk copy until next newline ---
+        const nl = chunk.indexOf("\n", i);
+        if (nl === -1) {
+          output += chunk.slice(i);
+          break;
+        }
+        output += chunk.slice(i, nl + 1);
+        i = nl + 1;
+        atLineStart = true;
+      }
+
+      if (output !== "") controller.enqueue(output);
+    },
+
+    flush(controller) {
+      if (mode === "done") return;
+
+      if (lineBuffer !== "") {
+        processLine(lineBuffer);
+        lineBuffer = "";
+      }
+
+      if (mode === "capturing" && probe !== "" && !isClosingFence(probe, delimiter)) {
+        controller.enqueue(probe);
+      }
+    },
+  });
+}
+
+/**
  * Emits up to `limit` chunks then closes the stream.
  * @param limit - Maximum number of chunks to emit.
  * @throws RangeError for negative or NaN limit.

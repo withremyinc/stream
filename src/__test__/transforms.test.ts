@@ -5,6 +5,7 @@ import { arrayStream } from "../streams";
 import {
   map,
   filter,
+  filterMap,
   take,
   takeLast,
   drop,
@@ -79,6 +80,44 @@ describe("transforms", () => {
       const stream = arrayStream(numbers).pipeThrough(filter((x, i) => i < 3)); // Keep first 3
       const result = await collect(stream);
       expect(result).toEqual([1, 2, 3]);
+    });
+  });
+
+  describe("filterMap", () => {
+    it("should map sync values and drop undefined", async () => {
+      const stream = arrayStream(numbers).pipeThrough(
+        filterMap((x) => (x % 2 === 0 ? x * 10 : undefined)),
+      );
+      const result = await collect(stream);
+      expect(result).toEqual([20, 40]);
+    });
+
+    it("should map async values and drop null", async () => {
+      const stream = arrayStream(numbers).pipeThrough(
+        filterMap(async (x) => (x > 3 ? x.toString() : null)),
+      );
+      const result = await collect(stream);
+      expect(result).toEqual(["4", "5"]);
+    });
+
+    it("should preserve falsey mapped values", async () => {
+      const stream = arrayStream([0, 1, 2]).pipeThrough(
+        filterMap((x) => {
+          if (x === 0) return 0;
+          if (x === 1) return false;
+          return "";
+        }),
+      );
+      const result = await collect(stream);
+      expect(result).toEqual([0, false, ""]);
+    });
+
+    it("should provide index to mapper", async () => {
+      const stream = arrayStream(strings).pipeThrough(
+        filterMap((x, i) => (i % 2 === 0 ? `${x}${i}` : undefined)),
+      );
+      const result = await collect(stream);
+      expect(result).toEqual(["a0", "c2"]);
     });
   });
 
