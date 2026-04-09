@@ -1086,7 +1086,7 @@ function renderNav(cats) {
     </div>
     <div class="sidebar-links">
       <a href="https://www.npmjs.com/package/@withremyinc/stream" target="_blank" rel="noopener">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M0 7.334v8h6.666v1.332H12v-1.332h12v-8H0zm6.666 6.664H5.334v-4H3.999v4H1.335V8.667h5.331v5.331zm4 0h-2.667V8.667h2.667v5.331zm12-5.331v4h-1.333v-4h-1.333v4h-1.334v-4h-1.333v4h-1.333V8.667h6.666z"/></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M1.763 0C.786 0 0 .786 0 1.763v20.474C0 23.214.786 24 1.763 24h20.474c.977 0 1.763-.786 1.763-1.763V1.763C24 .786 23.214 0 22.237 0zM5.13 5.323l13.837.019-.009 13.836h-3.464l.01-10.382h-3.456L12.04 19.17H5.113z"/></svg>
         npm
       </a>
       <a href="https://github.com/withremyinc/stream" target="_blank" rel="noopener">
