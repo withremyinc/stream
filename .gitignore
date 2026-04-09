@@ -28,6 +28,9 @@ Thumbs.db
 
 .cache/
 
+# Docs (generated)
+docs/
+
 # Editors
 .idea/
 *.swp

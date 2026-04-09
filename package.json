@@ -40,7 +40,8 @@
     "typecheck": "tsc --noEmit",
     "bench:geojson": "pnpm run build && node scripts/bench-geojson.mjs",
     "bench:xml": "pnpm run build && node scripts/bench-xml.mjs",
-    "pi": "pi",
+    "docs": "node scripts/build-docs.mjs",
+    "docs:serve": "node scripts/serve-docs.mjs",
     "prepublishOnly": "npm run build"
   },
   "author": "Michael Bullington <michael@withremy.com>",
@@ -58,6 +59,7 @@
     "access": "public"
   },
   "devDependencies": {
+    "shiki": "^4.0.2",
     "tsdown": "^0.21.7",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"

@@ -3,7 +3,7 @@ import { parseXMLFromScanner, type ParseOutput, type XMLAttribute } from "./pars
 import { scanXML, type ScanXMLOptions, type XMLTextMode } from "./scanner";
 
 /**
- * Public event stream emitted by {@linkcode parseXML}.
+ * Public event stream emitted by `parseXML`.
  *
  * `parseXML()` is tolerant by default: it accepts XML documents and fragments,
  * emits `onError` for malformed structure, and continues when recovery is

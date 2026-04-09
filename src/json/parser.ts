@@ -13,7 +13,7 @@ import {
 } from "../util/generators";
 
 /**
- * A {@linkcode JSONPath} segment. Either a string representing an object property name
+ * A `JSONPath` segment. Either a string representing an object property name
  * or a number (starting at 0) for array indices.
  */
 export type Segment = string | number;
