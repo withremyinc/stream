@@ -1,7 +1,7 @@
 {
   "name": "@withremyinc/stream",
   "version": "1.0.0",
-  "description": "Utility-first library for working with Web Streams API in AI systems.",
+  "description": "Composable Web Streams utilities with streaming JSON and XML parsing.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -12,19 +12,30 @@
     }
   },
   "sideEffects": false,
-  "files": ["dist", "README.md", "LICENSE.md"],
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE.md",
+    "NOTICES.md"
+  ],
   "engines": {
     "node": ">=18"
   },
   "keywords": [
     "streams",
+    "web-streams",
     "readablestream",
     "transformstream",
-    "web-streams",
-    "async-iterable"
+    "async-iterable",
+    "json",
+    "jsonc",
+    "xml",
+    "parser",
+    "llm"
   ],
   "scripts": {
-    "build": "tsdown && node rename-dts-entry.mjs",
+    "build": "tsdown",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "bench:geojson": "pnpm run build && node scripts/bench-geojson.mjs",
@@ -39,11 +50,15 @@
     "type": "git",
     "url": "https://github.com/withremyinc/stream.git"
   },
+  "homepage": "https://github.com/withremyinc/stream#readme",
+  "bugs": {
+    "url": "https://github.com/withremyinc/stream/issues"
+  },
   "publishConfig": {
     "access": "public"
   },
   "devDependencies": {
-    "tsdown": "^0.13.5",
+    "tsdown": "^0.21.7",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"
   }

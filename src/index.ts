@@ -59,8 +59,7 @@ export function mergeKeyed<V extends Record<string, unknown>>(streamsObj: {
             while (true) {
               const { done, value } = await reader.read();
               if (done) break;
-              // @ts-ignore
-              controller.enqueue({ [key]: value });
+              controller.enqueue({ [key]: value } as Partial<V>);
             }
           } catch (e) {
             controller.error(e);

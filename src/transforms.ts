@@ -350,8 +350,7 @@ export function scan<T, U>(
  * Accumulates chunks into a single result, emitting it on completion.
  * @param reducer - Function combining accumulator and chunk.
  * @param initialValue - Initial accumulator value.
- * @returns TransformStream emitting final accumulator.
- * @throws TypeError if stream is empty and no initialValue provided.
+ * @returns TransformStream emitting the final accumulator on flush.
  */
 export function reduce<T, U>(
   reducer: (accumulator: U, chunk: T, index: number) => U | Promise<U>,
