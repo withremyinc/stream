@@ -42,26 +42,37 @@ export type ScanOutput =
   | {
       token: SyntaxKind;
       value?: string;
+      partial?: boolean;
     }
   | {
       error: ScanError;
     };
 
+export type JSONScannerOptions = {
+  /** Emit partial string literal tokens when an open string reaches a chunk boundary. */
+  emitPartialStrings?: boolean;
+};
+
 /**
  * Creates a JSON scanner on the given text.
  * Whitespaces and comments are ignored.
  */
-export function scanJSON() {
+export function scanJSON(options: JSONScannerOptions = {}) {
+  const emitPartialStrings = options.emitPartialStrings === true;
+
   function* scanString(
     peekCharCode: () => number,
     options: StringGeneratorFactoryOptions,
   ): GeneratorWithNext<ScanOutput> {
-    const { next, substring, pos, retainFrom } = options;
+    const { next, substring, pos, retainFrom, waitForMoreTokens } = options;
 
     yield next();
     let value = "";
     let start = pos();
     retainFrom(start);
+
+    let terminatedByError = false;
+    let emittedPartialAtBoundary = false;
 
     // SCAN STRING
     {
@@ -69,7 +80,15 @@ export function scanJSON() {
         const ch = peekCharCode();
         if (ch === EOF) {
           value += substring(start, pos());
+          if (emitPartialStrings && !emittedPartialAtBoundary && value.length > 0) {
+            yield {
+              token: SyntaxKind.StringLiteral,
+              value,
+              partial: true,
+            };
+          }
           yield { error: ScanError.UnexpectedEndOfString };
+          terminatedByError = emitPartialStrings;
           break;
         }
         if (ch === CharacterCodes.doubleQuote) {
@@ -156,17 +175,38 @@ export function scanJSON() {
             yield {
               error: ScanError.UnexpectedEndOfString,
             };
+            terminatedByError = emitPartialStrings;
             break;
           } else {
             yield { error: ScanError.InvalidCharacter };
             // mark as error but continue with string
           }
         }
-        yield next();
+        if (emitPartialStrings) {
+          next();
+          if (options.inputExhausted()) {
+            value += substring(start, pos());
+            if (value.length > 0) {
+              yield {
+                token: SyntaxKind.StringLiteral,
+                value,
+                partial: true,
+              };
+              emittedPartialAtBoundary = true;
+            }
+            start = pos();
+            retainFrom(start);
+            yield waitForMoreTokens();
+          }
+        } else {
+          yield next();
+        }
       }
     }
     retainFrom(pos());
-    yield { token: SyntaxKind.StringLiteral, value };
+    if (!terminatedByError) {
+      yield { token: SyntaxKind.StringLiteral, value };
+    }
   }
 
   function* scanNumber(

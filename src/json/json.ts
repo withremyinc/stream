@@ -5,8 +5,15 @@ import { scanJSON } from "./scanner";
 
 export type JSONParserOutput = ParseOutput;
 
-export function parseJSON(): TransformStream<string, JSONParserOutput> {
-  const scanner = scanJSON();
+export type JSONParserOptions = {
+  /** Emit onPartialLiteralValue events for unterminated string literals at chunk boundaries. */
+  emitPartialStrings?: boolean;
+};
+
+export function parseJSON(
+  options: JSONParserOptions = {},
+): TransformStream<string, JSONParserOutput> {
+  const scanner = scanJSON(options);
   const parser = parseJSONFromScanner();
 
   let writer: WritableStreamDefaultWriter<string>;

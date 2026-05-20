@@ -11,6 +11,12 @@ async function getTokensFromChunks(chunks: string[]): Promise<ScanOutput[]> {
   return await collect(arrayStream(chunks).pipeThrough(scanJSON()));
 }
 
+async function getPartialStringTokensFromChunks(chunks: string[]): Promise<ScanOutput[]> {
+  return await collect(
+    arrayStream(chunks).pipeThrough(scanJSON({ emitPartialStrings: true })),
+  );
+}
+
 describe("JSON", () => {
   test("tokens", async () => {
     expect(await getTokens("{")).toEqual([
@@ -31,6 +37,18 @@ describe("JSON", () => {
 
     expect(await getTokens(":")).toEqual([{ token: SyntaxKind.ColonToken }]);
     expect(await getTokens(",")).toEqual([{ token: SyntaxKind.CommaToken }]);
+  });
+
+  test("partial strings", async () => {
+    expect(await getPartialStringTokensFromChunks(['"hel'])).toStrictEqual([
+      { token: SyntaxKind.StringLiteral, value: "hel", partial: true },
+      { error: ScanError.UnexpectedEndOfString },
+    ]);
+
+    expect(await getPartialStringTokensFromChunks(['"hel', 'lo"'])).toStrictEqual([
+      { token: SyntaxKind.StringLiteral, value: "hel", partial: true },
+      { token: SyntaxKind.StringLiteral, value: "hello" },
+    ]);
   });
 
   test("comments", async () => {

@@ -7,6 +7,12 @@ async function collectEvents(chunks: string[]) {
   return await collect(arrayStream(chunks).pipeThrough(parseJSON()));
 }
 
+async function collectPartialEvents(chunks: string[]) {
+  return await collect(
+    arrayStream(chunks).pipeThrough(parseJSON({ emitPartialStrings: true })),
+  );
+}
+
 async function assertValidParse(input: string, expected: unknown) {
   await assertValidParseChunks([...input], expected);
 }
@@ -35,6 +41,16 @@ async function assertInvalidParse(input: string, expectedPartial: unknown) {
 }
 
 describe("parse", () => {
+  test("partial string literals", async () => {
+    expect(await collectPartialEvents(['{"name":"str', 'eam"}'])).toStrictEqual([
+      { type: "onObjectBegin", path: [] },
+      { type: "onObjectProperty", name: "name", path: [] },
+      { type: "onPartialLiteralValue", value: "str", path: ["name"] },
+      { type: "onLiteralValue", value: "stream", path: ["name"] },
+      { type: "onObjectEnd", path: [] },
+    ]);
+  });
+
   test("literals", async () => {
     await assertValidParse("true", true);
     await assertValidParse("false", false);

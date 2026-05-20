@@ -80,6 +80,14 @@ export type ParseOutput =
     }
   | {
       /**
+       * Invoked when a string literal value is still open and more chunks may extend it.
+       */
+      type: "onPartialLiteralValue";
+      value: string;
+      path: JSONPath;
+    }
+  | {
+      /**
        * Invoked when a literal value is encountered.
        */
       type: "onLiteralValue";
@@ -94,7 +102,7 @@ export type ParseOutput =
 function matchesToken(
   scanOutput: ScanOutput | symbol,
   token: SyntaxKind,
-): scanOutput is { token: SyntaxKind; value?: any; string?: string } {
+): scanOutput is { token: SyntaxKind; value?: any; string?: string; partial?: boolean } {
   if (typeof scanOutput === "symbol") return false;
   if (!("token" in scanOutput)) return false;
   return scanOutput.token === token;
@@ -137,6 +145,12 @@ export function parseJSONFromScanner(): TransformStream<
     const { peek, next } = options;
     yield { type: "onError", error };
 
+    const currentToken = peek();
+    if (typeof currentToken !== "symbol" && "error" in currentToken) {
+      yield next();
+      return;
+    }
+
     if (skipUntilAfter.length + skipUntil.length > 0) {
       let token = peek();
       while (
@@ -160,7 +174,16 @@ export function parseJSONFromScanner(): TransformStream<
     options: GeneratorFactoryOptions<ScanOutput>,
   ): GeneratorWithNext<ParseOutput> {
     const { peek, next } = options;
-    const token = peek();
+    let token = peek();
+    while (matchesToken(token, SyntaxKind.StringLiteral) && token.partial === true) {
+      yield {
+        type: "onPartialLiteralValue",
+        value: token.value,
+        path: cloneJSONPath(),
+      };
+      yield next();
+      token = peek();
+    }
     let consumedLiteral = false;
 
     if (matchesToken(token, SyntaxKind.StringLiteral)) {
@@ -423,7 +446,7 @@ export function parseJSONFromScanner(): TransformStream<
   }
 
   return fromGenerator(function* (options) {
-    const { peek } = options;
+    const { peek, next } = options;
     while (true) {
       const token = peek();
       if (token === GENERATOR_END) {
@@ -452,6 +475,7 @@ export function parseJSONFromScanner(): TransformStream<
             yield* handleError(ParseErrorCode.InvalidCharacter, options);
             break;
         }
+        continue;
       }
 
       if ("token" in token) {

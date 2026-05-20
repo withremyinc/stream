@@ -6,8 +6,11 @@
 
 export const GENERATOR_END = Symbol("GENERATOR_END");
 
+type NextSignal = { next: true };
+type NeedMoreTokensSignal = { needMoreTokens: true };
+
 export type GeneratorWithNext<TYield, TNext = unknown, TReturn = void> = Generator<
-  TYield | { next: true },
+  TYield | NextSignal | NeedMoreTokensSignal,
   TReturn,
   TNext
 >;
@@ -17,14 +20,23 @@ const STRING_COMPACT_THRESHOLD = 256;
 
 export type GeneratorFactoryOptions<T0> = {
   peek: () => T0 | typeof GENERATOR_END;
-  next: () => { next: true };
+  next: () => NextSignal;
   pos: () => number;
 };
 
-function isNextSignal<T>(
-  value: T | { next: true } | undefined,
-): value is { next: true } {
+function isNextSignal<T>(value: T | NextSignal | undefined): value is NextSignal {
   return value !== null && value !== undefined && typeof value === "object" && "next" in value;
+}
+
+function isNeedMoreTokensSignal<T>(
+  value: T | NeedMoreTokensSignal | undefined,
+): value is NeedMoreTokensSignal {
+  return (
+    value !== null &&
+    value !== undefined &&
+    typeof value === "object" &&
+    "needMoreTokens" in value
+  );
 }
 
 export function fromGenerator<T0, T1>(
@@ -53,7 +65,7 @@ export function fromGenerator<T0, T1>(
     throw new Error("Tokens index out of range");
   }
 
-  function next(): { next: true } {
+  function next(): NextSignal {
     idx++;
     return { next: true };
   }
@@ -99,6 +111,11 @@ export function fromGenerator<T0, T1>(
         if (relativePos() >= tokens.length && !closed) {
           return;
         }
+      } else if (isNeedMoreTokensSignal(value)) {
+        compactTokens();
+        if (!closed) {
+          return;
+        }
       } else {
         controller.enqueue(value as T1);
       }
@@ -122,11 +139,14 @@ export function fromGenerator<T0, T1>(
 
 export type StringGeneratorFactoryOptions = {
   peek: () => string | typeof GENERATOR_END;
-  next: () => { next: true };
+  next: () => NextSignal;
   substring: (start: number, end: number) => string;
   pos: () => number;
   retainFrom: (position: number) => void;
   resumedAfterInputExhaustion: () => boolean;
+  waitForMoreTokens: () => NeedMoreTokensSignal;
+  inputExhausted: () => boolean;
+  isClosed: () => boolean;
 };
 
 export function fromStringGenerator<T1>(
@@ -156,7 +176,7 @@ export function fromStringGenerator<T1>(
     throw new Error("Tokens index out of range");
   }
 
-  function next(): { next: true } {
+  function next(): NextSignal {
     idx++;
     return { next: true };
   }
@@ -176,6 +196,10 @@ export function fromStringGenerator<T1>(
 
   function retainFrom(position: number) {
     retainedFrom = position;
+  }
+
+  function waitForMoreTokens(): NeedMoreTokensSignal {
+    return { needMoreTokens: true };
   }
 
   function compactTokens() {
@@ -201,6 +225,9 @@ export function fromStringGenerator<T1>(
     pos,
     retainFrom,
     resumedAfterInputExhaustion,
+    waitForMoreTokens,
+    inputExhausted: () => relativePos() >= tokens.length && !closed,
+    isClosed: () => closed,
   });
 
   function runGeneratorUntilNeedingMoreTokens(
@@ -224,6 +251,12 @@ export function fromStringGenerator<T1>(
       if (isNextSignal(value)) {
         compactTokens();
         if (relativePos() >= tokens.length && !closed) {
+          resumeInputExhausted = true;
+          return;
+        }
+      } else if (isNeedMoreTokensSignal(value)) {
+        compactTokens();
+        if (!closed) {
           resumeInputExhausted = true;
           return;
         }

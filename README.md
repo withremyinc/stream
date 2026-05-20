@@ -87,6 +87,7 @@ console.log(output); // [6, 8]
 `jsonToJSObject()` folds those events back into a plain JavaScript value.
 
 It is intentionally tolerant of JSONC-style input such as comments and trailing commas.
+When parsing LLM/tool-call streams, pass `{ emitPartialStrings: true }` to emit `onPartialLiteralValue` events for open string literals at chunk boundaries.
 
 ```ts
 import {
@@ -105,6 +106,19 @@ const [value] = await collect(
 );
 
 console.log(value); // { name: "Remy" }
+```
+
+```ts
+import { arrayStream, collect, parseJSON } from "@withremyinc/stream";
+
+const events = await collect(
+  arrayStream(['{"name":"str', 'eam"}']).pipeThrough(
+    parseJSON({ emitPartialStrings: true }),
+  ),
+);
+
+console.log(events);
+// includes { type: "onPartialLiteralValue", value: "str", path: ["name"] }
 ```
 
 ### Streaming XML
