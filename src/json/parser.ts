@@ -240,7 +240,12 @@ export function parseJSONFromScanner(): TransformStream<
     options: GeneratorFactoryOptions<ScanOutput>,
   ): GeneratorWithNext<ParseOutput> {
     const { peek, next, pos } = options;
-    const token = peek();
+    let token = peek();
+
+    while (matchesToken(token, SyntaxKind.StringLiteral) && token.partial === true) {
+      yield next();
+      token = peek();
+    }
 
     if (!matchesToken(token, SyntaxKind.StringLiteral)) {
       yield* handleError(
@@ -411,13 +416,13 @@ export function parseJSONFromScanner(): TransformStream<
       }
       needsComma = true;
     }
+    if (!isFirstElement) {
+      _jsonPath.pop(); // remove array index
+    }
     yield {
       type: "onArrayEnd",
       path: cloneJSONPath(),
     };
-    if (!isFirstElement) {
-      _jsonPath.pop(); // remove array index
-    }
     if (!matchesToken(peek(), SyntaxKind.CloseBracketToken)) {
       yield* handleError(
         ParseErrorCode.CloseBracketExpected,
