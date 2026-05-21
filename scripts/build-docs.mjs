@@ -15,6 +15,21 @@ function highlight(code, lang = "typescript") {
   return highlighter.codeToHtml(code, { lang, theme: "github-light" });
 }
 
+// Wraps occurrences of known type names in shiki-rendered HTML with anchor links
+// pointing at their #type-Foo entries in the sidebar. Operates on text nodes only
+// (the segment between `>` and `<`), so it won't disturb tag attributes.
+function linkifyTypes(html, linkableTypes) {
+  return html.replace(/>([^<>]+)</g, (_match, text) => {
+    const replaced = text.replace(/[A-Za-z_][A-Za-z0-9_]*/g, (name) => {
+      if (linkableTypes.has(name)) {
+        return `<a class="type-link" href="#type-${name}">${name}</a>`;
+      }
+      return name;
+    });
+    return `>${replaced}<`;
+  });
+}
+
 // ─── API Definitions ────────────────────────────────────────────────────────
 
 const categories = [
@@ -710,9 +725,9 @@ const result = await collectLast(arrayStream([1, 2, 3]));
       {
         name: "parseJSON",
         signature:
-          "parseJSON(): TransformStream<string, JSONParserOutput>",
+          "parseJSON(options?: JSONParserOptions): TransformStream<string, JSONParserOutput>",
         description:
-          "Streaming JSON/JSONC parser. Emits SAX-style events (onObjectBegin, onObjectEnd, onArrayBegin, onArrayEnd, onLiteralValue, onObjectProperty, onError) with full JSONPath tracking.",
+          "Streaming JSON/JSONC parser. Emits SAX-style events (onObjectBegin, onObjectEnd, onArrayBegin, onArrayEnd, onLiteralValue, onObjectProperty, onError) with full JSONPath tracking. Pass `{ emitPartialStrings: true }` to also emit onPartialLiteralValue events for open strings at chunk boundaries (useful for LLM token streams).",
         marble: {
           type: "parser",
           input: [
@@ -841,7 +856,15 @@ const typeDefinitions = [
   | { type: "onArrayBegin"; path: JSONPath }
   | { type: "onArrayEnd"; path: JSONPath }
   | { type: "onLiteralValue"; value: any; path: JSONPath }
+  | { type: "onPartialLiteralValue"; value: string; path: JSONPath }
   | { type: "onError"; error: ParseErrorCode }`,
+  },
+  {
+    name: "JSONParserOptions",
+    definition: `type JSONParserOptions = {
+  /** Emit onPartialLiteralValue events for unterminated string literals at chunk boundaries. */
+  emitPartialStrings?: boolean;
+}`,
   },
   {
     name: "JSONPath",
@@ -867,6 +890,28 @@ type JSONPath = Segment[];`,
   XMLParserOutput,
   { type: "onElementBegin" | "onElementEnd" | "onText" | "onError" }
 >`,
+  },
+  {
+    name: "XMLParserOptions",
+    definition: `type XMLParserOptions = {
+  /** Tags whose contents should be treated as opaque foreign text. */
+  foreignTags?: readonly string[];
+  /** "coalesced" (default) buffers text runs; "delta" emits text as it streams. */
+  textMode?: XMLTextMode;
+}`,
+  },
+  {
+    name: "XMLExtractOptions",
+    definition: `type XMLExtractOptions = {
+  /** Tag names to extract from mixed text. Contents are surfaced as opaque onText. */
+  allowTags: readonly string[];
+  /** "coalesced" (default) buffers text runs; "delta" emits text as it streams. */
+  textMode?: XMLTextMode;
+}`,
+  },
+  {
+    name: "XMLTextMode",
+    definition: `type XMLTextMode = "coalesced" | "delta";`,
   },
   {
     name: "XMLAttribute",
@@ -1050,12 +1095,14 @@ function renderMarbleSVG(marble) {
   return "";
 }
 
+const linkableTypes = new Set(typeDefinitions.map((t) => t.name));
+
 function renderApi(api) {
   return `
     <div class="api-item" id="${api.name}">
       <h3 class="api-name"><a href="#${api.name}">${escapeHtml(api.name)}</a></h3>
       <p class="api-description">${escapeHtml(api.description)}</p>
-      <div class="api-signature">${highlight(api.signature)}</div>
+      <div class="api-signature">${linkifyTypes(highlight(api.signature), linkableTypes)}</div>
       ${api.marble ? `<div class="api-visual"><div class="marble-diagram">${renderMarbleSVG(api.marble)}</div><div class="code-preview">${highlight(api.example)}</div></div>` : `<div class="api-visual"><div class="code-preview">${highlight(api.example)}</div></div>`}
     </div>`;
 }
@@ -1065,14 +1112,17 @@ function renderCategory(cat) {
 }
 
 function renderTypes() {
+  // Don't link a type to itself in its own definition.
   let html = ``;
   for (const t of typeDefinitions) {
+    const others = new Set(linkableTypes);
+    others.delete(t.name);
     html += `
         <div class="api-item" id="type-${t.name}">
           <div class="api-header">
             <span class="api-name"><a href="#type-${t.name}">${escapeHtml(t.name)}</a></span>
           </div>
-          <div class="code-preview">${highlight(t.definition)}</div>
+          <div class="code-preview">${linkifyTypes(highlight(t.definition), others)}</div>
         </div>`;
   }
   return html;
@@ -1303,6 +1353,85 @@ const html = `<!DOCTYPE html>
       color: var(--text-muted) !important;
     }
 
+    /* Type cross-reference links inside signatures + type definitions */
+    a.type-link {
+      color: inherit;
+      text-decoration: none;
+      border-bottom: 1px dashed rgba(0, 0, 0, 0.25);
+      transition: border-color 0.15s, color 0.15s;
+    }
+    a.type-link:hover {
+      border-bottom-color: currentColor;
+      color: var(--text-primary) !important;
+    }
+    .api-signature a.type-link:hover {
+      color: var(--text-primary) !important;
+    }
+
+    /* Type preview popover (Wikipedia-style) */
+    .type-preview {
+      position: absolute;
+      z-index: 1000;
+      max-width: 480px;
+      min-width: 280px;
+      background: var(--bg-color);
+      border: 1px solid #e2e2e2;
+      border-radius: 8px;
+      box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.04),
+        0 8px 24px rgba(0, 0, 0, 0.10);
+      padding: 12px 14px;
+      pointer-events: auto;
+      opacity: 0;
+      transform: translateY(-2px);
+      transition: opacity 0.12s ease-out, transform 0.12s ease-out;
+    }
+    .type-preview.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .type-preview-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .type-preview-name {
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .type-preview-jump {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: background-color 0.15s, color 0.15s;
+    }
+    .type-preview-jump:hover {
+      background: var(--hover-bg);
+      color: var(--text-primary);
+    }
+    .type-preview pre.shiki {
+      margin: 0;
+      padding: 0;
+      background: none !important;
+      max-height: 320px;
+      overflow: auto;
+    }
+    .type-preview code {
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.55;
+      white-space: pre;
+    }
+    @media (max-width: 768px) {
+      .type-preview { display: none !important; }
+    }
+
 
     /* Marble + Code combined block */
     .api-visual {
@@ -1367,6 +1496,154 @@ const html = `<!DOCTYPE html>
     ${categories.map(renderCategory).join("\n")}
     ${renderTypes()}
   </main>
+  <script>
+    (function () {
+      const SHOW_DELAY = 220;
+      const HIDE_DELAY = 160;
+      const MARGIN = 12;
+
+      let popover = null;
+      let activeLink = null;
+      let showTimer = null;
+      let hideTimer = null;
+
+      function ensurePopover() {
+        if (popover) return popover;
+        popover = document.createElement("div");
+        popover.className = "type-preview";
+        popover.setAttribute("role", "tooltip");
+        popover.addEventListener("mouseenter", cancelHide);
+        popover.addEventListener("mouseleave", scheduleHide);
+        document.body.appendChild(popover);
+        return popover;
+      }
+
+      function buildContent(targetId, typeName) {
+        const target = document.getElementById(targetId);
+        if (!target) return null;
+        const code = target.querySelector(".code-preview");
+        if (!code) return null;
+        return (
+          '<div class="type-preview-header">' +
+            '<span class="type-preview-name">' + typeName + '</span>' +
+            '<a class="type-preview-jump" href="#' + targetId + '">jump to definition →</a>' +
+          '</div>' +
+          code.outerHTML
+        );
+      }
+
+      function position(link) {
+        if (!popover) return;
+        const linkRect = link.getBoundingClientRect();
+        const popRect = popover.getBoundingClientRect();
+        const vw = document.documentElement.clientWidth;
+        const vh = document.documentElement.clientHeight;
+
+        // Prefer below; flip above if it would overflow.
+        let top = linkRect.bottom + window.scrollY + 8;
+        const wouldOverflowBottom = linkRect.bottom + popRect.height + 16 > vh;
+        const fitsAbove = linkRect.top - popRect.height - 16 > 0;
+        if (wouldOverflowBottom && fitsAbove) {
+          top = linkRect.top + window.scrollY - popRect.height - 8;
+        }
+
+        // Horizontally align to link start, clamp to viewport.
+        let left = linkRect.left + window.scrollX;
+        const maxLeft = window.scrollX + vw - popRect.width - MARGIN;
+        const minLeft = window.scrollX + MARGIN;
+        if (left > maxLeft) left = maxLeft;
+        if (left < minLeft) left = minLeft;
+
+        popover.style.top = top + "px";
+        popover.style.left = left + "px";
+      }
+
+      function show(link) {
+        const href = link.getAttribute("href") || "";
+        if (!href.startsWith("#type-")) return;
+        const targetId = href.slice(1);
+        const typeName = link.textContent || targetId.replace(/^type-/, "");
+        const html = buildContent(targetId, typeName);
+        if (!html) return;
+
+        const pop = ensurePopover();
+        pop.innerHTML = html;
+        // Render off-screen first so we can measure.
+        pop.style.top = "-9999px";
+        pop.style.left = "-9999px";
+        pop.classList.add("visible");
+        // Next frame: measure + position.
+        requestAnimationFrame(function () {
+          if (activeLink !== link) return;
+          position(link);
+        });
+      }
+
+      function hide() {
+        if (!popover) return;
+        popover.classList.remove("visible");
+        activeLink = null;
+      }
+
+      function cancelShow() {
+        if (showTimer) {
+          clearTimeout(showTimer);
+          showTimer = null;
+        }
+      }
+      function cancelHide() {
+        if (hideTimer) {
+          clearTimeout(hideTimer);
+          hideTimer = null;
+        }
+      }
+      function scheduleHide() {
+        cancelHide();
+        hideTimer = setTimeout(hide, HIDE_DELAY);
+      }
+
+      function onEnter(e) {
+        const link = e.target.closest("a.type-link");
+        if (!link) return;
+        if (link === activeLink) {
+          cancelHide();
+          return;
+        }
+        activeLink = link;
+        cancelHide();
+        cancelShow();
+        showTimer = setTimeout(function () {
+          if (activeLink === link) show(link);
+        }, SHOW_DELAY);
+      }
+
+      function onLeave(e) {
+        const link = e.target.closest("a.type-link");
+        if (!link) return;
+        cancelShow();
+        scheduleHide();
+      }
+
+      document.addEventListener("mouseover", onEnter);
+      document.addEventListener("mouseout", onLeave);
+
+      // Hide on scroll/escape so the popover never feels stuck.
+      window.addEventListener(
+        "scroll",
+        function () {
+          cancelShow();
+          hide();
+        },
+        { passive: true }
+      );
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") {
+          cancelShow();
+          hide();
+        }
+      });
+    })();
+  </script>
 </body>
 </html>`;
 
