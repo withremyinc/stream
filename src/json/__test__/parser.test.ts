@@ -51,6 +51,20 @@ describe("parse", () => {
     ]);
   });
 
+  test("does not treat partial object property names as complete properties", async () => {
+    expect(await collectPartialEvents(['{"todos', '":[{"content":"x"}]}'])).toStrictEqual([
+      { type: "onObjectBegin", path: [] },
+      { type: "onObjectProperty", name: "todos", path: [] },
+      { type: "onArrayBegin", path: ["todos"] },
+      { type: "onObjectBegin", path: ["todos", 0] },
+      { type: "onObjectProperty", name: "content", path: ["todos", 0] },
+      { type: "onLiteralValue", value: "x", path: ["todos", 0, "content"] },
+      { type: "onObjectEnd", path: ["todos", 0] },
+      { type: "onArrayEnd", path: ["todos"] },
+      { type: "onObjectEnd", path: [] },
+    ]);
+  });
+
   test("literals", async () => {
     await assertValidParse("true", true);
     await assertValidParse("false", false);
