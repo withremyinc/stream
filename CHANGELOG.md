@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-05-26
+
+### Fixed
+
+- Wait for the complete string token before emitting `onObjectProperty` so partial property names split across chunks are no longer treated as complete keys (`emitPartialStrings: true`).
+- Emit `onArrayEnd` with the parent path instead of the last child index, restoring symmetry with `onArrayBegin` and matching the `onObjectBegin`/`onObjectEnd` convention.
+
 ## [1.0.1] - 2026-05-20
 
 ### Added
