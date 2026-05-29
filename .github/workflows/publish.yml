@@ -14,11 +14,15 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
+      id-token: write # required for npm provenance + OIDC trusted publishing
+    env:
+      # Surfaced as an env var so steps can branch on whether a token secret is
+      # configured. Secrets cannot be referenced directly in `if:` expressions.
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -27,12 +31,17 @@ jobs:
           run_install: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20.19.0
           registry-url: https://registry.npmjs.org
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+
+      # npm trusted publishing (OIDC) and current provenance attestations
+      # require npm >= 11.5.1, newer than the npm bundled with Node 20.
+      - name: Upgrade npm
+        run: npm install --global npm@latest
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -64,7 +73,24 @@ jobs:
       - name: Check package contents
         run: npm pack --dry-run
 
+      - name: Resolve publish auth mode
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            echo "Auth mode: NPM_TOKEN secret (automation/granular access token)."
+          else
+            echo "Auth mode: OIDC trusted publishing (no NPM_TOKEN secret set)."
+            echo "This requires a trusted publisher to be configured on npm:"
+            echo "  https://www.npmjs.com/package/@withremyinc/stream/access"
+            echo "  -> Trusted Publisher -> GitHub Actions"
+            echo "     repository: withremyinc/stream"
+            echo "     workflow:   .github/workflows/publish.yml"
+            echo "If neither a token nor trusted publishing is configured, the"
+            echo "publish step below fails with ENEEDAUTH."
+          fi
+
       - name: Publish to npm
         run: npm publish --provenance --access public
         env:
+          # When set, npm authenticates with the token. When empty, npm >= 11.5.1
+          # falls back to OIDC trusted publishing using the id-token below.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
