@@ -1,6 +1,6 @@
 {
   "name": "@withremyinc/stream",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Composable Web Streams utilities with streaming JSON and XML parsing.",
   "type": "module",
   "main": "dist/index.js",
