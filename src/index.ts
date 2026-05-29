@@ -11,27 +11,58 @@ export * from "./xml/xml";
  * @returns ReadableStream emitting chunks from all sources.
  */
 export function merge<T>(streams: ReadableStream<T>[]): ReadableStream<T> {
+  const readers = streams.map((s) => s.getReader());
+  // `settled` gates every controller.error()/controller.close() call so the
+  // controller is never closed after it has been errored (and vice versa),
+  // which would otherwise throw ERR_INVALID_STATE.
+  let settled = false;
+
   return new ReadableStream<T>({
     start(controller) {
-      const readers = streams.map((s) => s.getReader());
       let active = readers.length;
+
+      if (active === 0) {
+        settled = true;
+        controller.close();
+        return;
+      }
+
       readers.forEach((reader) => {
         const pump = async () => {
           try {
-            while (true) {
+            while (!settled) {
               const { done, value } = await reader.read();
               if (done) break;
-              controller.enqueue(value);
+              if (!settled) controller.enqueue(value);
             }
           } catch (e) {
-            controller.error(e);
+            if (!settled) {
+              settled = true;
+              controller.error(e);
+              // Cancel the sibling readers so they don't hang.
+              await Promise.all(
+                readers
+                  .filter((r) => r !== reader)
+                  .map((r) => r.cancel(e).catch(() => {})),
+              );
+            }
           } finally {
+            reader.releaseLock();
             active--;
-            if (active === 0) controller.close();
+            if (active === 0 && !settled) {
+              settled = true;
+              controller.close();
+            }
           }
         };
         pump();
       });
+    },
+    cancel(reason) {
+      settled = true;
+      return Promise.all(
+        readers.map((r) => r.cancel(reason).catch(() => {})),
+      ).then(() => undefined);
     },
   });
 }
@@ -44,31 +75,57 @@ export function merge<T>(streams: ReadableStream<T>[]): ReadableStream<T> {
 export function mergeKeyed<V extends Record<string, unknown>>(streamsObj: {
   [Key in keyof V]: ReadableStream<V[Key]>;
 }): ReadableStream<Partial<V>> {
+  const entries = Object.entries(streamsObj).map(
+    ([key, stream]) =>
+      [key, (stream as ReadableStream).getReader()] as const,
+  );
+  // See `merge` above: `settled` prevents close-after-error / double-close.
+  let settled = false;
+
   return new ReadableStream<Partial<V>>({
     start(controller) {
-      const entries = Object.entries(streamsObj);
       let active = entries.length;
+
       if (active === 0) {
+        settled = true;
         controller.close();
         return;
       }
-      entries.forEach(([key, stream]) => {
-        const reader = stream.getReader();
+
+      entries.forEach(([key, reader]) => {
         (async function pump() {
           try {
-            while (true) {
+            while (!settled) {
               const { done, value } = await reader.read();
               if (done) break;
-              controller.enqueue({ [key]: value } as Partial<V>);
+              if (!settled) controller.enqueue({ [key]: value } as Partial<V>);
             }
           } catch (e) {
-            controller.error(e);
+            if (!settled) {
+              settled = true;
+              controller.error(e);
+              await Promise.all(
+                entries
+                  .filter(([, r]) => r !== reader)
+                  .map(([, r]) => r.cancel(e).catch(() => {})),
+              );
+            }
           } finally {
+            reader.releaseLock();
             active--;
-            if (active === 0) controller.close();
+            if (active === 0 && !settled) {
+              settled = true;
+              controller.close();
+            }
           }
         })();
       });
+    },
+    cancel(reason) {
+      settled = true;
+      return Promise.all(
+        entries.map(([, r]) => r.cancel(reason).catch(() => {})),
+      ).then(() => undefined);
     },
   });
 }
@@ -79,27 +136,46 @@ export function mergeKeyed<V extends Record<string, unknown>>(streamsObj: {
  * @returns ReadableStream emitting chunks from all input streams in order.
  */
 export function concat<T>(streams: ReadableStream<T>[]): ReadableStream<T> {
+  const readers = streams.map((s) => s.getReader());
+  // See `merge` above: `settled` prevents close-after-error / double-close.
+  let settled = false;
+
   return new ReadableStream<T>({
     async start(controller) {
-      const readers = streams.map((s) => s.getReader());
-      let active = readers.length;
-      for (const reader of readers) {
-        const pump = async () => {
-          try {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              controller.enqueue(value);
-            }
-          } catch (e) {
-            controller.error(e);
-          } finally {
-            active--;
-            if (active === 0) controller.close();
+      try {
+        for (const reader of readers) {
+          if (settled) break;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (settled) break;
+            controller.enqueue(value);
           }
-        };
-        await pump();
+        }
+        if (!settled) {
+          settled = true;
+          controller.close();
+        }
+      } catch (e) {
+        if (!settled) {
+          settled = true;
+          controller.error(e);
+        }
+      } finally {
+        for (const reader of readers) {
+          try {
+            reader.releaseLock();
+          } catch {
+            // Reader may already be released; ignore.
+          }
+        }
       }
+    },
+    cancel(reason) {
+      settled = true;
+      return Promise.all(
+        readers.map((r) => r.cancel(reason).catch(() => {})),
+      ).then(() => undefined);
     },
   });
 }

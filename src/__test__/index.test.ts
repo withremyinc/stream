@@ -19,6 +19,58 @@ function delayedStream<T>(items: T[], delayMs = 5): ReadableStream<T> {
   });
 }
 
+// Helper: emits `items` (synchronously, on start) then errors the stream.
+function failAfter<T>(items: T[], error: Error): ReadableStream<T> {
+  return new ReadableStream<T>({
+    start(controller) {
+      for (const item of items) controller.enqueue(item);
+      controller.error(error);
+    },
+  });
+}
+
+// Helper: emits `items` one at a time (with delay) then errors the stream.
+function delayedFail<T>(
+  items: T[],
+  error: Error,
+  delayMs = 5,
+): ReadableStream<T> {
+  let i = 0;
+  return new ReadableStream<T>({
+    async pull(controller) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      if (i < items.length) {
+        controller.enqueue(items[i++]);
+      } else {
+        controller.error(error);
+      }
+    },
+  });
+}
+
+// A source stream that records whether it was cancelled (for cancellation tests).
+function cancelTrackingStream<T>(items: T[]): {
+  stream: ReadableStream<T>;
+  cancelled: () => boolean;
+} {
+  let wasCancelled = false;
+  let i = 0;
+  const stream = new ReadableStream<T>({
+    async pull(controller) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      if (i < items.length) {
+        controller.enqueue(items[i++]);
+      } else {
+        controller.close();
+      }
+    },
+    cancel() {
+      wasCancelled = true;
+    },
+  });
+  return { stream, cancelled: () => wasCancelled };
+}
+
 describe("index exports", () => {
   describe("merge", () => {
     it("should merge items from multiple streams as they arrive", async () => {
@@ -59,6 +111,39 @@ describe("index exports", () => {
       const result = await collect(mergedStream);
       expect(result).toEqual([1, 2, 3]);
     });
+
+    // Regression: https://github.com/withremyinc/stream/issues/2
+    it("should reject with the source error when the only stream errors", async () => {
+      const failing = failAfter(["a"], new Error("upstream died"));
+      await expect(collect(merge([failing]))).rejects.toThrow("upstream died");
+    });
+
+    it("should reject (not throw ERR_INVALID_STATE) when a source errors after a sibling completed", async () => {
+      const normal = arrayStream(["b"]); // completes immediately
+      const failing = delayedFail([], new Error("upstream died"), 10);
+      await expect(collect(merge([normal, failing]))).rejects.toThrow(
+        "upstream died",
+      );
+    });
+
+    it("should reject and cancel sibling readers when a source errors mid-stream", async () => {
+      const failing = delayedFail(["x"], new Error("boom"), 5);
+      const sibling = cancelTrackingStream(["s1", "s2", "s3"]);
+      await expect(collect(merge([failing, sibling.stream]))).rejects.toThrow(
+        "boom",
+      );
+      expect(sibling.cancelled()).toBe(true);
+    });
+
+    it("should cancel all source streams when the merged stream is cancelled", async () => {
+      const a = cancelTrackingStream([1, 2, 3]);
+      const b = cancelTrackingStream([4, 5, 6]);
+      const merged = merge([a.stream, b.stream]);
+      const reader = merged.getReader();
+      await reader.cancel(new Error("downstream gone"));
+      expect(a.cancelled()).toBe(true);
+      expect(b.cancelled()).toBe(true);
+    });
   });
 
   describe("mergeKeyed", () => {
@@ -96,6 +181,27 @@ describe("index exports", () => {
       const mergedStream = mergeKeyed(streamsObj);
       const result = await collect(mergedStream);
       expect(result).toEqual([]);
+    });
+
+    // Regression: https://github.com/withremyinc/stream/issues/2
+    it("should reject with the source error when a keyed stream errors", async () => {
+      const streamsObj = {
+        a: failAfter(["a1"], new Error("keyed died")),
+        b: arrayStream(["b1"]),
+      };
+      await expect(collect(mergeKeyed(streamsObj))).rejects.toThrow(
+        "keyed died",
+      );
+    });
+
+    it("should reject (not throw ERR_INVALID_STATE) when a keyed source errors after a sibling completed", async () => {
+      const streamsObj = {
+        a: arrayStream(["a1"]), // completes immediately
+        b: delayedFail<string>([], new Error("keyed died"), 10),
+      };
+      await expect(collect(mergeKeyed(streamsObj))).rejects.toThrow(
+        "keyed died",
+      );
     });
   });
 
@@ -138,6 +244,16 @@ describe("index exports", () => {
       const concatenatedStream = concat([stream1]);
       const result = await collect(concatenatedStream);
       expect(result).toEqual([1, 2, 3]);
+    });
+
+    // Regression: https://github.com/withremyinc/stream/issues/2
+    it("should reject with the source error when a stream errors", async () => {
+      const stream1 = arrayStream([1, 2]);
+      const failing = failAfter<number>([3], new Error("concat died"));
+      const stream3 = arrayStream([4, 5]);
+      await expect(
+        collect(concat([stream1, failing, stream3])),
+      ).rejects.toThrow("concat died");
     });
   });
 

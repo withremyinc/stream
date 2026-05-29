@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-05-29
+
+### Fixed
+
+- `merge` and `mergeKeyed` no longer throw `ERR_INVALID_STATE` ("Controller is already closed/errored") when one of the source streams errors. A `settled` guard now prevents closing a controller that was already errored (and vice versa). On error, sibling readers are cancelled so they no longer hang, and reader locks are released. ([#2](https://github.com/withremyinc/stream/issues/2))
+- `merge`, `mergeKeyed`, and `concat` now implement a `cancel` handler that propagates downstream cancellation to every source stream.
+- `concat` shared the same close-after-error bug as `merge`/`mergeKeyed` and is fixed by the same `settled` guard.
+
 ## [1.0.2] - 2026-05-26
 
 ### Fixed
