@@ -71,6 +71,22 @@ describe("JSON", () => {
       { token: SyntaxKind.Unknown, value: "/" },
       { token: SyntaxKind.Unknown, value: "ttt" },
     ]);
+
+    // the opening "*" must not double as the start of "*/"
+    expect(await getTokens("/*/ true")).toStrictEqual([
+      { error: ScanError.UnexpectedEndOfComment },
+    ]);
+    expect(await getTokens("/*/*/")).toEqual([]);
+  });
+
+  // Regression: flush() used to skip resuming the generator when compaction
+  // had emptied the buffer exactly, dropping the end-of-string error.
+  test("unterminated partial string longer than the compaction threshold still errors", async () => {
+    const body = "a".repeat(300);
+    expect(await getPartialStringTokensFromChunks([`"${body}`])).toStrictEqual([
+      { token: SyntaxKind.StringLiteral, value: body, partial: true },
+      { error: ScanError.UnexpectedEndOfString },
+    ]);
   });
 
   test("strings", async () => {

@@ -206,10 +206,6 @@ describe("index exports", () => {
   });
 
   describe("concat", () => {
-    // NOTE: The implementation in index.ts looks identical to merge,
-    // which is incorrect for concat. Concat should process streams sequentially.
-    // These tests assume the *intended* behavior of concat.
-    // If the implementation remains like merge, these tests might fail or show unexpected order.
     it("should concatenate streams sequentially", async () => {
       const stream1 = delayedStream([1, 2], 5);
       const stream2 = delayedStream([3, 4], 5);
@@ -254,6 +250,27 @@ describe("index exports", () => {
       await expect(
         collect(concat([stream1, failing, stream3])),
       ).rejects.toThrow("concat died");
+    });
+
+    // Regression: concat used to drain every source eagerly in start(),
+    // buffering the whole input regardless of consumer demand.
+    it("should not drain sources faster than the consumer reads", async () => {
+      let pulls = 0;
+      const source = new ReadableStream<number>({
+        pull(controller) {
+          pulls++;
+          controller.enqueue(pulls);
+        },
+      });
+
+      const reader = concat([source]).getReader();
+      await reader.read();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      // One read plus a small amount of internal buffering; an eager
+      // implementation would have pulled the infinite source thousands of times.
+      expect(pulls).toBeLessThanOrEqual(4);
+      await reader.cancel();
     });
   });
 
@@ -336,9 +353,3 @@ describe("index exports", () => {
     });
   });
 });
-
-// Potential issue found during test writing:
-// The 'concat' implementation in index.ts appears to be a copy of 'merge'.
-// 'concat' should process streams one after another, not concurrently like 'merge'.
-// The tests above for 'concat' assume the correct sequential behavior.
-// If the tests fail with interleaved results, the 'concat' implementation needs correction.

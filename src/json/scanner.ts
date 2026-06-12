@@ -378,22 +378,25 @@ export function scanJSON(options: JSONScannerOptions = {}) {
           }
           // Multi-line comment
           else if (peekCharCode() === CharacterCodes.asterisk) {
-            const lastCodes: number[] = [peekCharCode()];
+            // The opening "*" must not double as the start of the "*/"
+            // terminator, so the previous-character tracking starts empty
+            // ("/*/" is an unterminated comment, not an empty one).
+            let previousCode = CharacterCodes.EOF;
             do {
               yield next();
-              lastCodes.push(peekCharCode());
-              if (peekCharCode() === CharacterCodes.EOF) {
+              const currentCode = peekCharCode();
+              if (currentCode === CharacterCodes.EOF) {
                 yield { error: ScanError.UnexpectedEndOfComment };
                 break;
               }
               if (
-                lastCodes.length >= 2 &&
-                lastCodes[lastCodes.length - 2] === CharacterCodes.asterisk &&
-                lastCodes[lastCodes.length - 1] === CharacterCodes.slash
+                previousCode === CharacterCodes.asterisk &&
+                currentCode === CharacterCodes.slash
               ) {
                 yield next();
                 break;
               }
+              previousCode = currentCode;
             } while (true);
           } else {
             // just a single slash

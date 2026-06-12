@@ -233,6 +233,10 @@ export function take<T>(limit: number = 1): TransformStream<T, T> {
   }
   let taken = 0;
   return new TransformStream<T, T>({
+    start(controller) {
+      // take(0) should close immediately instead of consuming the upstream.
+      if (limit === 0) controller.terminate();
+    },
     transform(chunk, controller) {
       if (taken < limit) {
         controller.enqueue(chunk);

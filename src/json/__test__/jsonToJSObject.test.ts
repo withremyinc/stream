@@ -79,4 +79,25 @@ describe("jsonToJSObject", () => {
     const value = await buildViaReducer(events);
     expect(value).toStrictEqual({ a: 1 });
   });
+
+  test("__proto__ becomes an own property instead of replacing the prototype", async () => {
+    const events: JSONParserOutput[] = [
+      { type: "onObjectBegin", path: [] },
+      { type: "onObjectProperty", name: "name", path: [] },
+      { type: "onLiteralValue", value: "bob", path: ["name"] },
+      { type: "onObjectProperty", name: "__proto__", path: [] },
+      { type: "onObjectBegin", path: ["__proto__"] },
+      { type: "onObjectProperty", name: "isAdmin", path: ["__proto__"] },
+      { type: "onLiteralValue", value: true, path: ["__proto__", "isAdmin"] },
+      { type: "onObjectEnd", path: ["__proto__"] },
+      { type: "onObjectEnd", path: [] },
+    ];
+    const value = await buildViaReducer(events);
+    expect(value.name).toBe("bob");
+    expect(value.isAdmin).toBeUndefined();
+    expect(Object.getPrototypeOf(value)).toBe(Object.prototype);
+    expect(
+      Object.getOwnPropertyDescriptor(value, "__proto__")?.value,
+    ).toStrictEqual({ isAdmin: true });
+  });
 });

@@ -196,4 +196,42 @@ describe("parse", () => {
     }
     await assertValidParseChunks(chunks, expected);
   });
+
+  // Regression: flush() used to skip resuming the generator when compaction
+  // had emptied the buffer exactly, dropping end-of-input events.
+  test("unterminated array aligned to the token compaction threshold still emits onArrayEnd", async () => {
+    // 1 open bracket + 2048 numbers + 2047 commas = 4096 tokens, exactly the
+    // fromGenerator compaction threshold, with no closing bracket.
+    const chunks: string[] = ["["];
+    for (let i = 0; i < 2048; i++) {
+      chunks.push("1");
+      if (i < 2047) chunks.push(",");
+    }
+    const events = await collectEvents(chunks);
+    const types = events.map((e) => e.type);
+    expect(types).toContain("onArrayEnd");
+    expect(types).toContain("onError");
+  });
+
+  test("truncated long string with emitPartialStrings still reports the error", async () => {
+    const events = await collectPartialEvents([`"${"a".repeat(300)}`]);
+    expect(events.some((e) => e.type === "onPartialLiteralValue")).toBe(true);
+    expect(events.some((e) => e.type === "onError")).toBe(true);
+  });
+
+  test("__proto__ keys are parsed as own properties", async () => {
+    const events = await collectEvents([
+      ...`{"name": "bob", "__proto__": {"isAdmin": true}}`,
+    ]);
+    const [value] = await collect(
+      arrayStream(events)
+        .pipeThrough(jsonToJSObject())
+        .pipeThrough(takeLast(1)),
+    );
+    expect(value.isAdmin).toBeUndefined();
+    expect(Object.getPrototypeOf(value)).toBe(Object.prototype);
+    expect(
+      Object.getOwnPropertyDescriptor(value, "__proto__")?.value,
+    ).toStrictEqual({ isAdmin: true });
+  });
 });

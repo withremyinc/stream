@@ -1,6 +1,11 @@
 import { reduce } from "..";
 
-import { parseJSONFromScanner, type ParseOutput } from "./parser";
+import {
+  parseJSONFromScanner,
+  type JSONPath,
+  type ParseOutput,
+  type Segment,
+} from "./parser";
 import { scanJSON } from "./scanner";
 
 export type JSONParserOutput = ParseOutput;
@@ -57,6 +62,33 @@ export function parseJSON(
   });
 }
 
+function setOwnProperty(obj: any, key: Segment, value: any): void {
+  if (key === "__proto__") {
+    // Plain assignment to "__proto__" replaces the prototype instead of
+    // creating an own property, letting documents inject inherited properties.
+    Object.defineProperty(obj, key, {
+      value,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+  } else {
+    obj[key] = value;
+  }
+}
+
+function setAtPath(acc: any, path: JSONPath, value: any): void {
+  let obj = acc;
+  for (let i = 0; i < path.length - 1; i++) {
+    const segment = path[i];
+    if (!Object.prototype.hasOwnProperty.call(obj, segment)) {
+      setOwnProperty(obj, segment, typeof path[i + 1] === "number" ? [] : {});
+    }
+    obj = obj[segment];
+  }
+  setOwnProperty(obj, path[path.length - 1], value);
+}
+
 export function jsonToJSObject(): TransformStream<JSONParserOutput, any> {
   return reduce((acc, chunk) => {
     if (chunk.type === "onLiteralValue") {
@@ -67,15 +99,7 @@ export function jsonToJSObject(): TransformStream<JSONParserOutput, any> {
       }
 
       // Set the value at the specified path
-      let obj = acc;
-      for (let i = 0; i < path.length - 1; i++) {
-        const segment = path[i];
-        if (obj[segment] === undefined) {
-          obj[segment] = typeof path[i + 1] === "number" ? [] : {};
-        }
-        obj = obj[segment];
-      }
-      obj[path[path.length - 1]] = value;
+      setAtPath(acc, path, value);
     }
 
     if (chunk.type === "onObjectBegin") {
@@ -86,15 +110,7 @@ export function jsonToJSObject(): TransformStream<JSONParserOutput, any> {
       }
 
       // Create nested object at specified path
-      let obj = acc;
-      for (let i = 0; i < path.length - 1; i++) {
-        const segment = path[i];
-        if (obj[segment] === undefined) {
-          obj[segment] = typeof path[i + 1] === "number" ? [] : {};
-        }
-        obj = obj[segment];
-      }
-      obj[path[path.length - 1]] = {};
+      setAtPath(acc, path, {});
     }
 
     if (chunk.type === "onObjectEnd") {
@@ -113,15 +129,7 @@ export function jsonToJSObject(): TransformStream<JSONParserOutput, any> {
       }
 
       // Create nested array at specified path
-      let obj = acc;
-      for (let i = 0; i < path.length - 1; i++) {
-        const segment = path[i];
-        if (obj[segment] === undefined) {
-          obj[segment] = typeof path[i + 1] === "number" ? [] : {};
-        }
-        obj = obj[segment];
-      }
-      obj[path[path.length - 1]] = [];
+      setAtPath(acc, path, []);
     }
 
     if (chunk.type === "onArrayEnd") {

@@ -134,6 +134,18 @@ describe("transforms", () => {
       const result = await testTransform(take(0), numbers);
       expect(result).toEqual([]);
     });
+    it("should not consume the upstream when limit is 0", async () => {
+      let pulls = 0;
+      const infiniteSource = new ReadableStream<number>({
+        pull(controller) {
+          pulls++;
+          controller.enqueue(pulls);
+        },
+      });
+      const result = await collect(infiniteSource.pipeThrough(take(0)));
+      expect(result).toEqual([]);
+      expect(pulls).toBeLessThanOrEqual(2);
+    });
     it("should throw for negative limit", () => {
       expect(() => take(-1)).toThrow(RangeError);
     });

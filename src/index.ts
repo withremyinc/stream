@@ -137,44 +137,41 @@ export function mergeKeyed<V extends Record<string, unknown>>(streamsObj: {
  */
 export function concat<T>(streams: ReadableStream<T>[]): ReadableStream<T> {
   const readers = streams.map((s) => s.getReader());
-  // See `merge` above: `settled` prevents close-after-error / double-close.
-  let settled = false;
+  // Reading happens in pull() so sources are only drained as fast as the
+  // consumer reads, instead of buffering every chunk up front.
+  let index = 0;
+  let cancelled = false;
 
   return new ReadableStream<T>({
-    async start(controller) {
-      try {
-        for (const reader of readers) {
-          if (settled) break;
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            if (settled) break;
-            controller.enqueue(value);
-          }
+    async pull(controller) {
+      while (index < readers.length) {
+        const reader = readers[index];
+        let result: ReadableStreamReadResult<T>;
+        try {
+          result = await reader.read();
+        } catch (e) {
+          // Cancel the remaining sources so they don't hang.
+          index++;
+          await Promise.all(
+            readers.slice(index).map((r) => r.cancel(e).catch(() => {})),
+          );
+          throw e;
         }
-        if (!settled) {
-          settled = true;
-          controller.close();
+        // A cancel() that raced this read already settled the stream.
+        if (cancelled) return;
+        if (!result.done) {
+          controller.enqueue(result.value);
+          return;
         }
-      } catch (e) {
-        if (!settled) {
-          settled = true;
-          controller.error(e);
-        }
-      } finally {
-        for (const reader of readers) {
-          try {
-            reader.releaseLock();
-          } catch {
-            // Reader may already be released; ignore.
-          }
-        }
+        reader.releaseLock();
+        index++;
       }
+      controller.close();
     },
     cancel(reason) {
-      settled = true;
+      cancelled = true;
       return Promise.all(
-        readers.map((r) => r.cancel(reason).catch(() => {})),
+        readers.slice(index).map((r) => r.cancel(reason).catch(() => {})),
       ).then(() => undefined);
     },
   });

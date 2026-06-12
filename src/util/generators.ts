@@ -44,6 +44,7 @@ export function fromGenerator<T0, T1>(
 ): TransformStream<T0, T1> {
   let tokens: T0[] = [];
   let closed = false;
+  let everReceivedInput = false;
   let idx = 0;
   let base = 0;
 
@@ -92,7 +93,11 @@ export function fromGenerator<T0, T1>(
   function runGeneratorUntilNeedingMoreTokens(
     controller: TransformStreamDefaultController<T1>,
   ) {
-    if (idx === base && tokens.length === 0) {
+    // Compaction can leave `idx === base` with an empty buffer mid-stream, so
+    // gate on whether input ever arrived rather than on buffer emptiness —
+    // otherwise flush() would skip resuming the generator and drop its
+    // end-of-input output.
+    if (!everReceivedInput) {
       return;
     }
     if (relativePos() >= tokens.length && !closed) {
@@ -127,6 +132,7 @@ export function fromGenerator<T0, T1>(
       runGeneratorUntilNeedingMoreTokens(controller);
     },
     transform(chunk, controller) {
+      everReceivedInput = true;
       tokens.push(chunk);
       runGeneratorUntilNeedingMoreTokens(controller);
     },
@@ -154,6 +160,7 @@ export function fromStringGenerator<T1>(
 ): TransformStream<string, T1> {
   let tokens = "";
   let closed = false;
+  let everReceivedInput = false;
   let idx = 0;
   let base = 0;
   let retainedFrom = 0;
@@ -233,7 +240,9 @@ export function fromStringGenerator<T1>(
   function runGeneratorUntilNeedingMoreTokens(
     controller: TransformStreamDefaultController<T1>,
   ) {
-    if (idx === base && tokens.length === 0) {
+    // See fromGenerator: buffer emptiness is not a safe "no input yet" signal
+    // once compaction has run, and flush() must still resume the generator.
+    if (!everReceivedInput) {
       return;
     }
     if (relativePos() >= tokens.length && !closed) {
@@ -272,6 +281,9 @@ export function fromStringGenerator<T1>(
       runGeneratorUntilNeedingMoreTokens(controller);
     },
     transform(chunk, controller) {
+      if (chunk.length > 0) {
+        everReceivedInput = true;
+      }
       tokens += chunk;
       runGeneratorUntilNeedingMoreTokens(controller);
     },
