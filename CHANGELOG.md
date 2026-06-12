@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-06-12
+
+### Fixed
+
+- The streaming JSON/XML parsers no longer drop end-of-input events when internal buffer compaction empties the buffer exactly at end of input. Most visibly, `parseJSON({ emitPartialStrings: true })` on input truncated inside a long string (≥256 characters) silently omitted the final `UnexpectedEndOfString` error, and unterminated documents whose token count aligned with the compaction threshold lost trailing events such as `onArrayEnd`.
+- `jsonToJSObject()` now creates an own `"__proto__"` property (matching `JSON.parse` semantics) instead of replacing the result object's prototype, which allowed parsed documents to inject inherited properties onto the result.
+- The JSON scanner no longer treats `/*/` as a complete block comment; the opening `*` can no longer double as the start of the `*/` terminator.
+- `concat` now reads from its sources on demand instead of eagerly draining every stream into memory regardless of consumer backpressure.
+- `take(0)` now closes its stream immediately instead of silently consuming the entire upstream.
+
 ## [1.0.3] - 2026-05-29
 
 ### Fixed
