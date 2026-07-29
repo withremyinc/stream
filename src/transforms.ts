@@ -1,3 +1,10 @@
+import {
+  fromStringGenerator,
+  GENERATOR_END,
+  type GeneratorWithNext,
+  type StringGeneratorFactoryOptions,
+} from "./util/generators";
+
 /**
  * Applies a synchronous or asynchronous mapper to each chunk.
  * @param mapper - Function transforming each chunk with its index.
@@ -219,6 +226,224 @@ export function extractDelimiter(
       }
     },
   });
+}
+
+export type FrontmatterExtractOutput =
+  | {
+      /**
+       * Emitted once, as soon as the closing delimiter line is complete.
+       * `raw` is the header text between the delimiter lines, verbatim, minus
+       * the line ending that precedes the closing delimiter. Parsing it is left
+       * to the caller, so no YAML dependency is implied.
+       */
+      type: "onFrontmatter";
+      raw: string;
+    }
+  | {
+      /** Body text after the frontmatter, forwarded as deltas. */
+      type: "onBody";
+      value: string;
+    };
+
+export type ExtractFrontmatterOptions = {
+  /**
+   * Line marker used for both the opening and closing delimiter.
+   * Defaults to Markdown frontmatter's `---`.
+   */
+  delimiter?: string;
+  /**
+   * Maximum number of characters buffered while waiting for the closing
+   * delimiter. Guards against malformed input that never closes its header.
+   * Defaults to 65536.
+   */
+  maxHeaderChars?: number;
+};
+
+const DEFAULT_MAX_HEADER_CHARS = 65536;
+
+/** Is `line` (line ending already stripped) a delimiter line? */
+function isDelimiterLine(line: string, delimiter: string): boolean {
+  return (
+    line.startsWith(delimiter) && /^[\t ]*$/.test(line.slice(delimiter.length))
+  );
+}
+
+/**
+ * Splits a Markdown-style frontmatter header from the body that follows it.
+ *
+ * ```md
+ * ---
+ * behavior: reply
+ * ---
+ * The reply body streams here.
+ * ```
+ *
+ * Emits a single `onFrontmatter` event as soon as the closing delimiter line is
+ * complete, then forwards body text as `onBody` deltas without buffering the
+ * whole body. Delimiters are recognized only as complete lines and may be split
+ * across any number of chunks; end of input counts as a line boundary, so a
+ * closing delimiter in the final bytes needs no trailing newline.
+ *
+ * The header is emitted as raw text; parse it however you like at the point of
+ * consumption. Whitespace before the opening delimiter is ignored. The stream
+ * errors if the opening delimiter is missing, if the header is still open at
+ * end of input, or if the header exceeds `maxHeaderChars`.
+ *
+ * @param options - Delimiter and header size cap.
+ * @returns TransformStream from text chunks to frontmatter/body events.
+ */
+export function extractFrontmatter(
+  options: ExtractFrontmatterOptions = {},
+): TransformStream<string, FrontmatterExtractOutput> {
+  const delimiter = options.delimiter ?? "---";
+  if (
+    delimiter.length === 0 ||
+    /[\r\n]/.test(delimiter) ||
+    delimiter.trim() !== delimiter
+  ) {
+    throw new RangeError(
+      "delimiter must be a non-empty string without line breaks or surrounding whitespace",
+    );
+  }
+
+  const maxHeaderChars = options.maxHeaderChars ?? DEFAULT_MAX_HEADER_CHARS;
+  if (!(maxHeaderChars > 0)) {
+    throw new RangeError("maxHeaderChars must be a positive number");
+  }
+
+  type Output = FrontmatterExtractOutput;
+
+  let headerChars = 0;
+
+  /** Charge consumed header text against the cap. */
+  function count(chars: number): void {
+    headerChars += chars;
+    if (headerChars > maxHeaderChars) {
+      throw new Error(
+        `frontmatter exceeded maxHeaderChars (${maxHeaderChars}) before the closing "${delimiter}"`,
+      );
+    }
+  }
+
+  function unclosed(): Error {
+    return new Error(`input ended before the frontmatter "${delimiter}" closed`);
+  }
+
+  function missingOpening(line: string): Error {
+    return new Error(
+      `expected frontmatter to open with "${delimiter}" but found ${JSON.stringify(line)}`,
+    );
+  }
+
+  /** Consume the whitespace that may precede the opening delimiter. */
+  function* skipLeadingWhitespace(
+    io: StringGeneratorFactoryOptions,
+  ): GeneratorWithNext<Output> {
+    while (true) {
+      if (io.inputExhausted()) {
+        io.retainFrom(io.pos());
+        yield io.waitForMoreTokens();
+        continue;
+      }
+
+      const ch = io.peek();
+      if (ch === GENERATOR_END || !/\s/.test(ch)) return;
+      io.next();
+      count(1);
+    }
+  }
+
+  /**
+   * Read one line. `text` keeps the line ending, `line` drops it, and
+   * `terminated` is false when end of input ended the line instead of a newline.
+   */
+  function* readLine(
+    io: StringGeneratorFactoryOptions,
+  ): GeneratorWithNext<
+    Output,
+    unknown,
+    { text: string; line: string; terminated: boolean }
+  > {
+    let start = io.pos();
+    io.retainFrom(start);
+    let text = "";
+
+    /** Move everything scanned so far out of the buffer so it can compact. */
+    function drain(): void {
+      const segment = io.substring(start, io.pos());
+      text += segment;
+      count(segment.length);
+      io.retainFrom(io.pos());
+    }
+
+    while (true) {
+      if (io.inputExhausted()) {
+        drain();
+        yield io.waitForMoreTokens();
+        start = io.pos();
+        continue;
+      }
+
+      const ch = io.peek();
+      if (ch === GENERATOR_END) {
+        drain();
+        return { text, line: stripLineEnding(text), terminated: false };
+      }
+
+      io.next();
+      if (ch === "\n") {
+        drain();
+        return { text, line: stripLineEnding(text), terminated: true };
+      }
+    }
+  }
+
+  /** Forward the rest of the input as body deltas, one per arriving chunk. */
+  function* readBody(
+    io: StringGeneratorFactoryOptions,
+  ): GeneratorWithNext<Output> {
+    io.retainFrom(io.pos());
+
+    while (true) {
+      // The body is forwarded, not scanned, so take it in bulk instead of
+      // walking it a character at a time.
+      const value = io.takeAvailable();
+      io.retainFrom(io.pos());
+      if (value !== "") yield { type: "onBody", value };
+      if (io.isClosed()) return;
+      yield io.waitForMoreTokens();
+    }
+  }
+
+  return fromStringGenerator<Output>(
+    function* (io) {
+      yield* skipLeadingWhitespace(io);
+
+      const opening = yield* readLine(io);
+      if (!isDelimiterLine(opening.line, delimiter)) throw missingOpening(opening.line);
+      if (!opening.terminated) throw unclosed();
+
+      // Header lines, line endings included, until the closing delimiter.
+      let raw = "";
+      while (true) {
+        const { text, line, terminated } = yield* readLine(io);
+        // End of input is a line boundary too, so this closes the header even
+        // with no trailing newline.
+        if (isDelimiterLine(line, delimiter)) break;
+        if (!terminated) throw unclosed();
+        raw += text;
+      }
+
+      // The line ending before the closing delimiter is not part of the header.
+      raw = stripLineEnding(raw);
+      yield { type: "onFrontmatter", raw };
+
+      yield* readBody(io);
+    },
+    // An empty stream has no frontmatter, which is an error rather than a
+    // silent no-op, so the generator has to run even when no chunk arrives.
+    { runOnEmptyInput: true },
+  );
 }
 
 /**

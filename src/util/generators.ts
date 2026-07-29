@@ -148,6 +148,11 @@ export type StringGeneratorFactoryOptions = {
   next: () => NextSignal;
   substring: (start: number, end: number) => string;
   pos: () => number;
+  /**
+   * Consume every buffered character at once and return it, for grammars that
+   * stop inspecting the input and just forward the rest.
+   */
+  takeAvailable: () => string;
   retainFrom: (position: number) => void;
   resumedAfterInputExhaustion: () => boolean;
   waitForMoreTokens: () => NeedMoreTokensSignal;
@@ -155,8 +160,19 @@ export type StringGeneratorFactoryOptions = {
   isClosed: () => boolean;
 };
 
+export type StringGeneratorOptions = {
+  /**
+   * Run the generator when the input closes without ever delivering a chunk.
+   * Off by default: parsers that treat empty input as "nothing to do" stay
+   * silent. Turn it on when end-of-input itself is meaningful — for example a
+   * grammar with a required header, which must fail on an empty stream.
+   */
+  runOnEmptyInput?: boolean;
+};
+
 export function fromStringGenerator<T1>(
   factory: (options: StringGeneratorFactoryOptions) => GeneratorWithNext<T1>,
+  generatorOptions: StringGeneratorOptions = {},
 ): TransformStream<string, T1> {
   let tokens = "";
   let closed = false;
@@ -201,6 +217,19 @@ export function fromStringGenerator<T1>(
     return idx;
   }
 
+  function takeAvailable(): string {
+    const relative = relativePos();
+    if (relative < 0) {
+      throw new Error("String index fell behind compacted buffer");
+    }
+    if (relative >= tokens.length) {
+      return "";
+    }
+    const value = tokens.substring(relative);
+    idx = base + tokens.length;
+    return value;
+  }
+
   function retainFrom(position: number) {
     retainedFrom = position;
   }
@@ -230,6 +259,7 @@ export function fromStringGenerator<T1>(
     next,
     substring,
     pos,
+    takeAvailable,
     retainFrom,
     resumedAfterInputExhaustion,
     waitForMoreTokens,
@@ -242,7 +272,7 @@ export function fromStringGenerator<T1>(
   ) {
     // See fromGenerator: buffer emptiness is not a safe "no input yet" signal
     // once compaction has run, and flush() must still resume the generator.
-    if (!everReceivedInput) {
+    if (!everReceivedInput && !(closed && generatorOptions.runOnEmptyInput)) {
       return;
     }
     if (relativePos() >= tokens.length && !closed) {

@@ -8,6 +8,7 @@ import {
   extractXML,
   jsonToJSObject,
   parseJSON,
+  takeLast,
 } from "../index";
 
 describe("extractDelimiter", () => {
@@ -77,7 +78,8 @@ describe("extractDelimiter", () => {
       ])
         .pipeThrough(extractDelimiter({ allowLanguages: ["json"] }))
         .pipeThrough(parseJSON())
-        .pipeThrough(jsonToJSObject()),
+        .pipeThrough(jsonToJSObject())
+        .pipeThrough(takeLast(1)),
     );
 
     expect(values).toEqual([{ a: 1, b: [true, false] }]);

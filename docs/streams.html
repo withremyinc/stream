@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Thinking in Streams — @withremyinc/stream</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap');
+    @font-face {
+      font-family: "Rodger Bold";
+      src: url("https://framerusercontent.com/assets/WTgH0Lz1557m7kIAoJZYg7NHUcY.woff2") format("woff2");
+      font-display: swap;
+      font-style: normal;
+      font-weight: 700;
+    }
+
+    :root {
+      /* Brand palette — withremy.com */
+      --ink: #302127;
+      --cream: #feedc9;
+      --cream-soft: #fdf7ec;
+      --yellow: #fcb827;
+      --yellow-bright: #ffe24d;
+      --orange: #f37d39;
+      --blue: #4c93af;
+      --cyan-bg: #d7f1f7;
+      --line-strong: #e6ded2;
+
+      /* Semantic tokens (names reused throughout) */
+      --bg-color: #ffffff;
+      --text-primary: #302127;
+      --text-secondary: #635a5d;
+      --text-muted: #978f92;
+      --hover-bg: #fbf3e0;
+      --border-color: #efe9df;
+      --sidebar-w: 264px;
+      --font-stack: "Onest", -apple-system, BlinkMacSystemFont, "Segoe UI", helvetica, arial, sans-serif;
+      --font-display: "Rodger Bold", "Onest", -apple-system, BlinkMacSystemFont, "Segoe UI", helvetica, arial, sans-serif;
+      --mono: Menlo, Consolas, Monaco, "Adwaita Mono", "Liberation Mono", "Lucida Console", monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+    html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+
+    body {
+      font-family: var(--font-stack);
+      background-color: var(--bg-color);
+      color: var(--text-primary);
+      line-height: 1.55;
+      font-size: 15px;
+      letter-spacing: -0.01em;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      position: fixed;
+      top: 0; left: 0;
+      width: var(--sidebar-w);
+      height: 100vh;
+      overflow-y: auto;
+      border-right: 1px solid var(--border-color);
+      background: var(--cream-soft);
+      padding: 28px 20px;
+      z-index: 100;
+    }
+    .sidebar-header {
+      margin-bottom: 20px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--line-strong);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      text-decoration: none;
+    }
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: var(--yellow);
+      border: 1px solid var(--ink);
+      box-shadow: 0 2px 0 var(--ink);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: none;
+      transition: transform 0.12s ease, box-shadow 0.12s ease;
+    }
+    .brand:hover .brand-mark {
+      transform: translateY(-1px);
+      box-shadow: 0 3px 0 var(--ink);
+    }
+    .brand-text { display: flex; flex-direction: column; line-height: 1; }
+    .brand-name {
+      font-family: var(--font-display);
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: var(--ink);
+    }
+    .brand-scope {
+      font-family: var(--font-stack);
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+    .sidebar-tagline {
+      font-family: var(--font-stack);
+      font-size: 12.5px;
+      font-weight: 400;
+      color: var(--text-muted);
+      margin-top: 16px;
+      line-height: 1.45;
+      letter-spacing: 0;
+    }
+    .sidebar-links {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 22px;
+    }
+    .sidebar-links a {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--ink);
+      text-decoration: none;
+      padding: 6px 12px;
+      border-radius: 100px;
+      background: #fff;
+      border: 1px solid var(--line-strong);
+      box-shadow: 0 2px 0 var(--line-strong);
+      transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.15s;
+    }
+    .sidebar-links a:hover {
+      background: var(--yellow);
+      border-color: var(--ink);
+      box-shadow: 0 2px 0 var(--ink);
+      transform: translateY(-1px);
+    }
+
+    .nav-group { margin-bottom: 16px; }
+    .nav-group-title {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding: 4px 10px;
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+    .nav-group-title:hover { color: var(--orange); }
+    .nav-group ul { list-style: none; }
+    .nav-group li a {
+      display: block;
+      padding: 4px 10px 4px 16px;
+      font-size: 14px;
+      font-family: var(--font-stack);
+      color: var(--text-secondary);
+      text-decoration: none;
+      border-radius: 8px;
+      transition: all 0.12s;
+    }
+    .nav-group li a:hover {
+      background: #fff;
+      color: var(--ink);
+    }
+
+    /* Main */
+    .main {
+      margin-left: var(--sidebar-w);
+      max-width: 760px;
+      padding: 56px 48px 96px;
+    }
+
+    /* Hero */
+    .hero-header {
+      margin-bottom: 44px;
+      padding: 0;
+      background: none;
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    h1.hero-title {
+      font-family: var(--font-display);
+      font-size: 44px;
+      font-weight: 700;
+      letter-spacing: -1.5px;
+      line-height: 1.05;
+      color: var(--ink);
+      margin-bottom: 12px;
+    }
+    p.hero-subtitle {
+      font-size: 17px;
+      color: var(--text-secondary);
+      max-width: 52ch;
+      line-height: 1.45;
+    }
+
+    /* Section headers */
+    .api-section { margin-bottom: 12px; }
+    .section-header {
+      margin: 8px 0 4px;
+      padding-bottom: 12px;
+    }
+    .section-title {
+      font-family: var(--font-display);
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+      line-height: 1.1;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .section-title::after {
+      content: "";
+      flex: 1;
+      height: 3px;
+      border-radius: 100px;
+      background: var(--yellow);
+      opacity: 0.5;
+    }
+    .section-subtitle {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-top: 6px;
+    }
+
+
+    /* API items */
+    details { outline: none; }
+    summary { list-style: none; outline: none; }
+    summary::-webkit-details-marker { display: none; }
+    .api-item {
+      padding: 30px 0;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .api-item:last-child { border-bottom: none; }
+    .api-name {
+      font-size: 19px;
+      font-weight: 700;
+      font-family: var(--font-stack);
+      letter-spacing: -0.02em;
+      color: var(--ink);
+      margin: 0 0 10px 0;
+    }
+    .api-name a {
+      color: inherit;
+      text-decoration: none;
+    }
+    .api-name a::after {
+      content: ' #';
+      color: var(--orange);
+      opacity: 0;
+      transition: opacity 0.15s;
+      font-weight: 700;
+    }
+    .api-name:hover a::after {
+      opacity: 1;
+    }
+    .api-description {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      margin-bottom: 10px;
+    }
+    .api-description code {
+      font-family: var(--mono);
+      font-size: 0.9em;
+      color: var(--text-primary);
+      background: var(--hover-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 1px 4px;
+    }
+    .api-signature {
+      padding: 0;
+      margin-bottom: 14px;
+      overflow-x: auto;
+    }
+    .api-signature pre.shiki {
+      margin: 0;
+      padding: 0;
+      background: none !important;
+    }
+    .api-signature code {
+      font-size: 12px;
+      font-family: var(--mono);
+      color: var(--text-muted) !important;
+      white-space: pre;
+      line-height: 1.5;
+    }
+    .api-signature .line span {
+      color: var(--text-muted) !important;
+    }
+
+    /* Type cross-reference links inside signatures + type definitions */
+    a.type-link {
+      color: inherit;
+      text-decoration: none;
+      border-bottom: 1px dashed var(--orange);
+      transition: border-color 0.15s, color 0.15s, background-color 0.15s;
+    }
+    a.type-link:hover {
+      border-bottom-color: var(--orange);
+      color: var(--orange) !important;
+      background: rgba(243, 125, 57, 0.08);
+    }
+    .api-signature a.type-link:hover {
+      color: var(--orange) !important;
+    }
+
+    /* Type preview popover (Wikipedia-style) */
+    .type-preview {
+      position: absolute;
+      z-index: 1000;
+      max-width: 480px;
+      min-width: 280px;
+      background: var(--bg-color);
+      border: 1px solid var(--line-strong);
+      border-radius: 12px;
+      box-shadow:
+        0 1px 2px rgba(48, 33, 39, 0.05),
+        0 10px 28px rgba(48, 33, 39, 0.12);
+      padding: 12px 14px;
+      pointer-events: auto;
+      opacity: 0;
+      transform: translateY(-2px);
+      transition: opacity 0.12s ease-out, transform 0.12s ease-out;
+    }
+    .type-preview.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .type-preview-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .type-preview-name {
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .type-preview-jump {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: background-color 0.15s, color 0.15s;
+    }
+    .type-preview-jump:hover {
+      background: var(--hover-bg);
+      color: var(--text-primary);
+    }
+    .type-preview pre.shiki {
+      margin: 0;
+      padding: 0;
+      background: none !important;
+      max-height: 320px;
+      overflow: auto;
+    }
+    .type-preview code {
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.55;
+      white-space: pre;
+    }
+    @media (max-width: 768px) {
+      .type-preview { display: none !important; }
+    }
+
+
+    /* Marble + Code combined block */
+    .api-visual {
+      border: 1px solid var(--line-strong);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 3px 0 var(--border-color);
+    }
+    .api-visual .marble-diagram {
+      background: var(--cream-soft);
+      padding: 18px 12px;
+      border-bottom: 1px solid var(--line-strong);
+      display: flex;
+      justify-content: center;
+    }
+    .api-visual .code-preview {
+      padding: 14px 16px;
+      border-radius: 0;
+    }
+    .marble-svg {
+      width: 100%;
+      max-width: 520px;
+      height: auto;
+    }
+
+    /* Code Preview */
+    .code-preview {
+      padding: 14px 16px;
+      overflow-x: auto;
+      border: 1px solid var(--line-strong);
+      border-radius: 12px;
+      background: var(--cream-soft);
+    }
+    .api-visual .code-preview {
+      border: none;
+      border-radius: 0;
+      background: #fff;
+    }
+    .code-preview pre.shiki {
+      margin: 0;
+      padding: 0;
+      background: none !important;
+    }
+    .code-preview code {
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.6;
+      white-space: pre;
+    }
+
+    /* Active page in sidebar */
+    .nav-group li a.is-active {
+      background: var(--cream);
+      color: var(--ink);
+      font-weight: 600;
+    }
+
+    /* TOC card under the hero */
+    .toc-card {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin: 0 0 52px;
+      padding: 14px;
+      border: 1px solid var(--line-strong);
+      border-radius: 16px;
+      background: var(--cream-soft);
+    }
+    .toc-card-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding: 4px 8px 8px;
+    }
+    .toc-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      text-decoration: none;
+      border: 1px solid transparent;
+      transition: background-color 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+    }
+    .toc-item:hover {
+      background: #fff;
+      border-color: var(--line-strong);
+      transform: translateX(2px);
+    }
+    .toc-item.is-here { cursor: default; }
+    .toc-item.is-here:hover { background: transparent; border-color: transparent; transform: none; }
+    .toc-item-text { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+    .toc-item-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--ink);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .toc-here-tag {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: var(--ink);
+      background: var(--yellow);
+      padding: 2px 7px;
+      border-radius: 100px;
+    }
+    .toc-item-desc { font-size: 13px; color: var(--text-secondary); }
+    .toc-item-arrow {
+      font-size: 16px;
+      color: var(--text-muted);
+      transition: color 0.12s ease, transform 0.12s ease;
+    }
+    .toc-item:hover .toc-item-arrow { color: var(--orange); transform: translateX(2px); }
+    .toc-item.is-here .toc-item-arrow { display: none; }
+
+    /* Guide prose */
+    .guide-hero .hero-title { font-family: var(--font-display); }
+    .prose { max-width: 660px; }
+    .prose p {
+      font-size: 15.5px;
+      line-height: 1.7;
+      color: var(--text-secondary);
+      margin: 0 0 16px;
+    }
+    .prose p.lead {
+      font-size: 18px;
+      line-height: 1.6;
+      color: var(--ink);
+    }
+    .prose ul {
+      margin: 0 0 16px;
+      padding-left: 22px;
+    }
+    .prose li {
+      font-size: 15.5px;
+      line-height: 1.6;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+    .prose strong { color: var(--ink); font-weight: 600; }
+    .prose code {
+      font-family: var(--mono);
+      font-size: 0.86em;
+      background: var(--cream-soft);
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      padding: 1px 5px;
+      color: var(--ink);
+    }
+    .prose a {
+      color: var(--orange);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(243, 125, 57, 0.35);
+      transition: border-color 0.12s ease;
+    }
+    .prose a:hover { border-bottom-color: var(--orange); }
+    .prose .code-preview { margin: 18px 0; }
+    .guide-section .section-header { padding-bottom: 8px; }
+
+    /* Callout */
+    .callout {
+      background: var(--cream);
+      border: 1px solid var(--line-strong);
+      border-radius: 12px;
+      padding: 16px 18px;
+      margin: 4px 0 18px;
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--ink);
+    }
+    .callout strong { color: var(--ink); }
+    .callout-draft { background: var(--cream-soft); }
+    .callout-draft p { margin: 8px 0 0; color: var(--text-secondary); font-size: 14px; }
+
+    /* Mobile */
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .main { margin-left: 0; padding: 24px 16px 60px; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="sidebar-header">
+      <a class="brand" href="https://www.npmjs.com/package/@withremyinc/stream" target="_blank" rel="noopener">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 245 244" width="19" height="19" fill="none" stroke="#302127" stroke-width="36" stroke-linecap="round">
+            <path d="M18 142.515C37.1392 126.32 55.0015 108.629 70.3638 88.7807C83.1654 72.2409 97.4587 40.3036 92.552 19.1415C91.5234 14.7056 82.9118 24.3798 80.5 28.0003C67.6628 47.2709 53.0406 87.9162 86.5 93C110.35 96.6237 178.12 25.736 159.699 59.5492C151.436 74.7143 143.083 89.7157 136.697 105.805C130.415 121.634 120.704 149.206 117.405 170.017C114 191.5 120.5 221.5 151.171 225.5C181.663 229.477 211.133 196.674 226.388 173.791"/>
+          </svg>
+        </span>
+        <span class="brand-text">
+          <span class="brand-name">stream</span>
+          <span class="brand-scope">@withremyinc</span>
+        </span>
+      </a>
+      <p class="sidebar-tagline">Composable Web Streams utilities with streaming JSON &amp; XML parsing.</p>
+    </div>
+    <div class="sidebar-links">
+      <a href="https://www.npmjs.com/package/@withremyinc/stream" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M1.763 0C.786 0 0 .786 0 1.763v20.474C0 23.214.786 24 1.763 24h20.474c.977 0 1.763-.786 1.763-1.763V1.763C24 .786 23.214 0 22.237 0zM5.13 5.323l13.837.019-.009 13.836h-3.464l.01-10.382h-3.456L12.04 19.17H5.113z"/></svg>
+        npm
+      </a>
+      <a href="https://github.com/withremyinc/stream" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+        GitHub
+      </a>
+    </div>
+    <div class="sidebar-nav">
+      <div class="nav-group">
+        <span class="nav-group-title">Pages</span>
+        <ul>
+          <li><a href="streams.html" aria-current="page" class="is-active">Thinking in Streams</a></li>
+          <li><a href="index.html">API Reference</a></li>
+          <li><a href="skill.html">Agent Skill</a></li>
+        </ul>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group-title">On this page</span>
+        <ul>
+          <li><a href="#why">Why streams?</a></li>
+          <li><a href="#api">The API in three nouns</a></li>
+          <li><a href="#pull">Pull, not push</a></li>
+          <li><a href="#mental-model">A mental model</a></li>
+          <li><a href="#pipeline">Your first pipeline</a></li>
+          <li><a href="#when-not">When not to use streams</a></li>
+          <li><a href="#next">Where this library fits</a></li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+  <main class="main">
+    
+    <header class="hero-header guide-hero">
+      <h1 class="hero-title">Thinking in Streams</h1>
+      <p class="hero-subtitle">A short, friendly mental model for the Web Streams API — and how this library helps you work with data that arrives over time.</p>
+    </header>
+    <nav class="toc-card" aria-label="Site pages">
+      <span class="toc-card-label">Start here</span>
+      <a class="toc-item is-here" href="#" aria-current="page">
+        <span class="toc-item-text">
+          <span class="toc-item-title">Thinking in Streams <span class="toc-here-tag">you are here</span></span>
+          <span class="toc-item-desc">New to streams? Start with the mental model.</span>
+        </span>
+        <span class="toc-item-arrow" aria-hidden="true">→</span>
+      </a>
+      <a class="toc-item" href="index.html">
+        <span class="toc-item-text">
+          <span class="toc-item-title">API Reference</span>
+          <span class="toc-item-desc">Every helper, with marble diagrams + examples.</span>
+        </span>
+        <span class="toc-item-arrow" aria-hidden="true">→</span>
+      </a>
+      <a class="toc-item" href="skill.html">
+        <span class="toc-item-text">
+          <span class="toc-item-title">Agent Skill</span>
+          <span class="toc-item-desc">Drop-in instructions so AI agents get streams right.</span>
+        </span>
+        <span class="toc-item-arrow" aria-hidden="true">→</span>
+      </a>
+    </nav>
+
+    
+    <section class="api-section guide-section" id="why">
+      <div class="section-header">
+        <h2 class="section-title">Why streams?</h2>
+      </div>
+      <div class="prose">
+      <p class="lead">Most code assumes you have all your data before you start: an array in memory, a full response body, a complete file. Streams are for the (very common) case where you <em>don't</em> — where data shows up a piece at a time.</p>
+      <p>Think about an LLM typing out a response, a multi-gigabyte log file, rows from a database cursor, or bytes off a network socket. Waiting for the <em>last</em> piece before you do anything means more memory, more latency, and a worse experience. Streams let you start working on the first chunk while the rest is still on its way.</p>
+      <div class="callout">
+        <strong>The one-sentence version:</strong> a stream is a sequence of values that arrive over time, that you process one chunk at a time without ever holding the whole thing in memory.
+      </div></div>
+    </section>
+
+    
+    <section class="api-section guide-section" id="api">
+      <div class="section-header">
+        <h2 class="section-title">The API in three nouns</h2>
+      </div>
+      <div class="prose">
+      <p>The <a href="https://developer.mozilla.org/en-US/docs/Web/API/Streams_API" target="_blank" rel="noopener">Web Streams API</a> is built into modern browsers, Node, Deno, and Bun. You really only need three nouns:</p>
+      <ul>
+        <li><strong>ReadableStream</strong> — a source you pull values <em>out of</em> (a file, a fetch body, an array you wrap).</li>
+        <li><strong>WritableStream</strong> — a sink you push values <em>into</em> (a file, the console, a socket).</li>
+        <li><strong>TransformStream</strong> — a step in the middle: values go in, (different) values come out.</li>
+      </ul>
+      <p>And one verb that connects them: <code>.pipeThrough()</code> for transforms, <code>.pipeTo()</code> for a final sink.</p>
+      <div class="code-preview"><pre class="shiki github-light" style="background-color:#fff;color:#24292e" tabindex="0"><code><span class="line"><span style="color:#6A737D">// A stream is values arriving over time — not all at once.</span></span>
+<span class="line"><span style="color:#D73A49">const</span><span style="color:#005CC5"> lines</span><span style="color:#D73A49"> =</span><span style="color:#6F42C1"> fetch</span><span style="color:#24292E">(</span><span style="color:#032F62">"/big.log"</span><span style="color:#24292E">)</span></span>
+<span class="line"><span style="color:#24292E">  .</span><span style="color:#6F42C1">then</span><span style="color:#24292E">(</span><span style="color:#E36209">r</span><span style="color:#D73A49"> =></span><span style="color:#24292E"> r.body)               </span><span style="color:#6A737D">// ReadableStream&#x3C;Uint8Array></span></span>
+<span class="line"><span style="color:#24292E">  .</span><span style="color:#6F42C1">pipeThrough</span><span style="color:#24292E">(</span><span style="color:#D73A49">new</span><span style="color:#6F42C1"> TextDecoderStream</span><span style="color:#24292E">())</span></span>
+<span class="line"><span style="color:#24292E">  .</span><span style="color:#6F42C1">pipeThrough</span><span style="color:#24292E">(</span><span style="color:#6F42C1">splitLines</span><span style="color:#24292E">());      </span><span style="color:#6A737D">// ReadableStream&#x3C;string></span></span></code></pre></div>
+      <p>That's the whole shape: <strong>source → transform → transform → sink</strong>. Everything in this library is just a nicely-typed source, transform, or collector you can drop into that chain.</p></div>
+    </section>
+
+    
+    <section class="api-section guide-section" id="pull">
+      <div class="section-header">
+        <h2 class="section-title">Pull, not push (a.k.a. backpressure)</h2>
+      </div>
+      <div class="prose">
+      <p>The thing that surprises people: Web Streams are <strong>pull-based</strong>. A source doesn't fire data at you as fast as it can. The consumer asks for the next chunk when it's ready, and that "I'm ready" signal travels back up the whole pipeline.</p>
+      <p>This is <strong>backpressure</strong>, and you get it for free. If your slow database write can only keep up with 100 rows/sec, the fetch at the top of the pipe automatically slows down to match. No manual buffering, no unbounded memory growth, no <code>drain</code> events to babysit.</p>
+      <div class="callout">
+        If you've ever written code that loaded a 2&nbsp;GB file into an array and watched the process OOM, backpressure is the thing you were missing.
+      </div></div>
+    </section>
+
+    
+    <section class="api-section guide-section" id="mental-model">
+      <div class="section-header">
+        <h2 class="section-title">A mental model: arrays you can't see all at once</h2>
+      </div>
+      <div class="prose">
+      <p>The most useful trick is to picture a stream as an <strong>array stretched out across time</strong>. You can't index into it or call <code>.length</code> — you only ever see one element at the "now" line — but the operations you already know still apply:</p>
+      <ul>
+        <li><code>map</code> transforms each value as it passes.</li>
+        <li><code>filter</code> drops values that don't match.</li>
+        <li><code>reduce</code> / <code>scan</code> fold values into an accumulator.</li>
+        <li><code>take</code> / <code>drop</code> slice by position.</li>
+      </ul>
+      <p>That's why the marble diagrams in the <a href="index.html">API reference</a> are worth a look: each one shows values flowing left-to-right along a timeline, so you can <em>see</em> what a transform does instead of decoding a type signature.</p></div>
+    </section>
+
+    
+    <section class="api-section guide-section" id="pipeline">
+      <div class="section-header">
+        <h2 class="section-title">Your first pipeline</h2>
+      </div>
+      <div class="prose">
+      <p>Here's the quick-start, annotated. <code>arrayStream</code> turns a plain array into a source, the transforms run in order, and <code>collect</code> drains everything back into an array at the end.</p>
+      <div class="code-preview"><pre class="shiki github-light" style="background-color:#fff;color:#24292e" tabindex="0"><code><span class="line"><span style="color:#D73A49">import</span><span style="color:#24292E"> { arrayStream, collect, filter, map } </span><span style="color:#D73A49">from</span><span style="color:#032F62"> "@withremyinc/stream"</span><span style="color:#24292E">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#D73A49">const</span><span style="color:#005CC5"> output</span><span style="color:#D73A49"> =</span><span style="color:#D73A49"> await</span><span style="color:#6F42C1"> collect</span><span style="color:#24292E">(</span></span>
+<span class="line"><span style="color:#6F42C1">  arrayStream</span><span style="color:#24292E">([</span><span style="color:#005CC5">1</span><span style="color:#24292E">, </span><span style="color:#005CC5">2</span><span style="color:#24292E">, </span><span style="color:#005CC5">3</span><span style="color:#24292E">, </span><span style="color:#005CC5">4</span><span style="color:#24292E">])</span></span>
+<span class="line"><span style="color:#24292E">    .</span><span style="color:#6F42C1">pipeThrough</span><span style="color:#24292E">(</span><span style="color:#6F42C1">map</span><span style="color:#24292E">(</span><span style="color:#E36209">n</span><span style="color:#D73A49"> =></span><span style="color:#24292E"> n </span><span style="color:#D73A49">*</span><span style="color:#005CC5"> 2</span><span style="color:#24292E">))      </span><span style="color:#6A737D">// 2, 4, 6, 8</span></span>
+<span class="line"><span style="color:#24292E">    .</span><span style="color:#6F42C1">pipeThrough</span><span style="color:#24292E">(</span><span style="color:#6F42C1">filter</span><span style="color:#24292E">(</span><span style="color:#E36209">n</span><span style="color:#D73A49"> =></span><span style="color:#24292E"> n </span><span style="color:#D73A49">></span><span style="color:#005CC5"> 4</span><span style="color:#24292E">)),  </span><span style="color:#6A737D">// 6, 8</span></span>
+<span class="line"><span style="color:#24292E">);</span></span>
+<span class="line"><span style="color:#6A737D">// [6, 8]</span></span></code></pre></div>
+      <p>The streaming parsers are where this gets genuinely useful. Feed in text as it arrives and get structured events out immediately — ideal for LLM token streams:</p>
+      <div class="code-preview"><pre class="shiki github-light" style="background-color:#fff;color:#24292e" tabindex="0"><code><span class="line"><span style="color:#D73A49">import</span><span style="color:#24292E"> { parseJSON } </span><span style="color:#D73A49">from</span><span style="color:#032F62"> "@withremyinc/stream"</span><span style="color:#24292E">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">// Tokens from an LLM arrive a few characters at a time.</span></span>
+<span class="line"><span style="color:#6A737D">// parseJSON emits structured events as soon as it can — no waiting</span></span>
+<span class="line"><span style="color:#6A737D">// for the closing brace.</span></span>
+<span class="line"><span style="color:#24292E">modelStream</span></span>
+<span class="line"><span style="color:#24292E">  .</span><span style="color:#6F42C1">pipeThrough</span><span style="color:#24292E">(</span><span style="color:#6F42C1">parseJSON</span><span style="color:#24292E">({ emitPartialStrings: </span><span style="color:#005CC5">true</span><span style="color:#24292E"> }))</span></span>
+<span class="line"><span style="color:#24292E">  .</span><span style="color:#6F42C1">pipeTo</span><span style="color:#24292E">(</span><span style="color:#6F42C1">renderAsItStreams</span><span style="color:#24292E">());</span></span></code></pre></div></div>
+    </section>
+
+    
+    <section class="api-section guide-section" id="when-not">
+      <div class="section-header">
+        <h2 class="section-title">When not to use streams</h2>
+      </div>
+      <div class="prose">
+      <p>Streams are a tool, not a religion. If your data is small and already in memory, a plain array and <code>Array.prototype.map</code> is simpler and faster to read. Reach for streams when at least one of these is true:</p>
+      <ul>
+        <li>The data is large enough that holding it all in memory is a problem.</li>
+        <li>The data arrives over time and you want to act on early chunks.</li>
+        <li>You need backpressure between a fast producer and a slow consumer.</li>
+      </ul></div>
+    </section>
+
+    
+    <section class="api-section guide-section" id="next">
+      <div class="section-header">
+        <h2 class="section-title">Where this library fits</h2>
+      </div>
+      <div class="prose">
+      <p>The Web Streams API gives you the primitives; it does <em>not</em> give you <code>map</code>, <code>filter</code>, <code>merge</code>, or a tolerant streaming JSON/XML parser. That's the gap <code>@withremyinc/stream</code> fills: small, composable, well-typed helpers that snap onto the standard <code>pipeThrough</code>/<code>pipeTo</code> chain.</p>
+      <p>Ready to build something? Head to the <a href="index.html">API reference</a> — every helper has a marble diagram and a runnable example. Working with an AI agent? The <a href="skill.html">agent skill</a> teaches it to use these correctly.</p></div>
+    </section>
+  </main>
+  <script>
+    (function () {
+      const SHOW_DELAY = 220;
+      const HIDE_DELAY = 160;
+      const MARGIN = 12;
+
+      let popover = null;
+      let activeLink = null;
+      let showTimer = null;
+      let hideTimer = null;
+
+      function ensurePopover() {
+        if (popover) return popover;
+        popover = document.createElement("div");
+        popover.className = "type-preview";
+        popover.setAttribute("role", "tooltip");
+        popover.addEventListener("mouseenter", cancelHide);
+        popover.addEventListener("mouseleave", scheduleHide);
+        document.body.appendChild(popover);
+        return popover;
+      }
+
+      function buildContent(targetId, typeName) {
+        const target = document.getElementById(targetId);
+        if (!target) return null;
+        const code = target.querySelector(".code-preview");
+        if (!code) return null;
+        return (
+          '<div class="type-preview-header">' +
+            '<span class="type-preview-name">' + typeName + '</span>' +
+            '<a class="type-preview-jump" href="#' + targetId + '">jump to definition →</a>' +
+          '</div>' +
+          code.outerHTML
+        );
+      }
+
+      function position(link) {
+        if (!popover) return;
+        const linkRect = link.getBoundingClientRect();
+        const popRect = popover.getBoundingClientRect();
+        const vw = document.documentElement.clientWidth;
+        const vh = document.documentElement.clientHeight;
+
+        // Prefer below; flip above if it would overflow.
+        let top = linkRect.bottom + window.scrollY + 8;
+        const wouldOverflowBottom = linkRect.bottom + popRect.height + 16 > vh;
+        const fitsAbove = linkRect.top - popRect.height - 16 > 0;
+        if (wouldOverflowBottom && fitsAbove) {
+          top = linkRect.top + window.scrollY - popRect.height - 8;
+        }
+
+        // Horizontally align to link start, clamp to viewport.
+        let left = linkRect.left + window.scrollX;
+        const maxLeft = window.scrollX + vw - popRect.width - MARGIN;
+        const minLeft = window.scrollX + MARGIN;
+        if (left > maxLeft) left = maxLeft;
+        if (left < minLeft) left = minLeft;
+
+        popover.style.top = top + "px";
+        popover.style.left = left + "px";
+      }
+
+      function show(link) {
+        const href = link.getAttribute("href") || "";
+        if (!href.startsWith("#type-")) return;
+        const targetId = href.slice(1);
+        const typeName = link.textContent || targetId.replace(/^type-/, "");
+        const html = buildContent(targetId, typeName);
+        if (!html) return;
+
+        const pop = ensurePopover();
+        pop.innerHTML = html;
+        // Render off-screen first so we can measure.
+        pop.style.top = "-9999px";
+        pop.style.left = "-9999px";
+        pop.classList.add("visible");
+        // Next frame: measure + position.
+        requestAnimationFrame(function () {
+          if (activeLink !== link) return;
+          position(link);
+        });
+      }
+
+      function hide() {
+        if (!popover) return;
+        popover.classList.remove("visible");
+        activeLink = null;
+      }
+
+      function cancelShow() {
+        if (showTimer) {
+          clearTimeout(showTimer);
+          showTimer = null;
+        }
+      }
+      function cancelHide() {
+        if (hideTimer) {
+          clearTimeout(hideTimer);
+          hideTimer = null;
+        }
+      }
+      function scheduleHide() {
+        cancelHide();
+        hideTimer = setTimeout(hide, HIDE_DELAY);
+      }
+
+      function onEnter(e) {
+        const link = e.target.closest("a.type-link");
+        if (!link) return;
+        if (link === activeLink) {
+          cancelHide();
+          return;
+        }
+        activeLink = link;
+        cancelHide();
+        cancelShow();
+        showTimer = setTimeout(function () {
+          if (activeLink === link) show(link);
+        }, SHOW_DELAY);
+      }
+
+      function onLeave(e) {
+        const link = e.target.closest("a.type-link");
+        if (!link) return;
+        cancelShow();
+        scheduleHide();
+      }
+
+      document.addEventListener("mouseover", onEnter);
+      document.addEventListener("mouseout", onLeave);
+
+      // Hide on scroll/escape so the popover never feels stuck.
+      window.addEventListener(
+        "scroll",
+        function () {
+          cancelShow();
+          hide();
+        },
+        { passive: true }
+      );
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") {
+          cancelShow();
+          hide();
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
