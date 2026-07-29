@@ -40,8 +40,10 @@ jobs:
 
       # npm trusted publishing (OIDC) and current provenance attestations
       # require npm >= 11.5.1, newer than the npm bundled with Node 20.
+      # Pinned to the 11.x line on purpose: npm@latest is now 12.x, which
+      # requires Node >= 22.22 and fails to install on this job's Node 20.19.
       - name: Upgrade npm
-        run: npm install --global npm@latest
+        run: npm install --global npm@^11.5.1
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
