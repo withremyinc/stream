@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-07-28
+
+### Changed
+
+- **Breaking:** `jsonToJSObject()` is now incremental. It emits the value reconstructed so far after every parser event that changes it — including the `onPartialLiteralValue` events from `parseJSON({ emitPartialStrings: true })` — instead of emitting once when the input closes. Incremental consumers no longer need their own `scan()` reducer. ([#4](https://github.com/withremyinc/stream/issues/4))
+
+  To get the previous one-value behavior, append `takeLast(1)`:
+
+  ```diff
+    .pipeThrough(parseJSON())
+    .pipeThrough(jsonToJSObject())
+  + .pipeThrough(takeLast(1))
+  ```
+
+  Every emission is the same live accumulator rather than a copy, which is what keeps emitting on every event free: reconstructing a large document costs what it did before. Copy anything you retain and treat emitted values as read-only. Two smaller consequences: an empty event stream now emits nothing instead of a single `null`, and a string left open at end of input keeps its last partial value instead of being dropped.
+
+### Added
+
+- `extractFrontmatter()` splits a Markdown-style frontmatter header from the body that follows it, emitting `onFrontmatter` as soon as the closing delimiter is complete and forwarding the body as `onBody` deltas. Delimiters may be split across chunks, end of input counts as a line boundary so a closing delimiter needs no trailing newline, and header growth is bounded by `maxHeaderChars`. The header is emitted as raw text for the caller to parse at the point of consumption, so no YAML parser is bundled or implied. ([#5](https://github.com/withremyinc/stream/issues/5))
+
+### Fixed
+
+- Added a `default` export condition so runtime transpilers such as jiti, which resolve the package through the `require` condition, no longer fail with `ERR_PACKAGE_PATH_NOT_EXPORTED`. The package remains ESM-only; no `require` condition was added because there is no CommonJS build to point it at. ([#3](https://github.com/withremyinc/stream/issues/3))
+
 ## [1.0.4] - 2026-06-12
 
 ### Fixed

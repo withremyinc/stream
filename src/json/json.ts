@@ -1,5 +1,3 @@
-import { reduce } from "..";
-
 import {
   parseJSONFromScanner,
   type JSONPath,
@@ -89,53 +87,69 @@ function setAtPath(acc: any, path: JSONPath, value: any): void {
   setOwnProperty(obj, path[path.length - 1], value);
 }
 
+/**
+ * Folds `parseJSON()` events back into a plain JavaScript value, emitting the
+ * value reconstructed so far after every event that changes it — including the
+ * `onPartialLiteralValue` events from `parseJSON({ emitPartialStrings: true })`,
+ * so a string still arriving shows up as it grows.
+ *
+ * Every emission is the same live accumulator, not a copy: it costs nothing to
+ * emit, but the object you receive keeps changing as the rest of the input
+ * arrives. Clone anything you retain (`structuredClone`, a spread) and treat
+ * emitted values as read-only. To reconstruct a whole document, take the last
+ * emission with `takeLast(1)`.
+ *
+ * @returns TransformStream from parser events to reconstructed values.
+ */
 export function jsonToJSObject(): TransformStream<JSONParserOutput, any> {
-  return reduce((acc, chunk) => {
-    if (chunk.type === "onLiteralValue") {
-      const { value, path } = chunk;
-      if (path.length === 0) {
-        // Top-level literal value
-        return value;
+  let value: any = null;
+
+  /** @returns true when the event changed the reconstructed value. */
+  function begin(path: JSONPath, empty: any): boolean {
+    if (path.length === 0) {
+      // Top-level container.
+      if (value !== null) return false;
+      value = empty;
+      return true;
+    }
+
+    setAtPath(value, path, empty);
+    return true;
+  }
+
+  function apply(chunk: JSONParserOutput): boolean {
+    switch (chunk.type) {
+      case "onLiteralValue":
+      case "onPartialLiteralValue": {
+        const { path } = chunk;
+        if (path.length === 0) {
+          // Top-level literal value.
+          value = chunk.value;
+          return true;
+        }
+
+        setAtPath(value, path, chunk.value);
+        return true;
       }
 
-      // Set the value at the specified path
-      setAtPath(acc, path, value);
-    }
+      case "onObjectBegin":
+        return begin(chunk.path, {});
 
-    if (chunk.type === "onObjectBegin") {
-      const { path } = chunk;
-      if (path.length === 0) {
-        // Top-level object
-        return acc === null ? {} : acc;
+      case "onArrayBegin":
+        return begin(chunk.path, []);
+
+      // onObjectProperty is already covered by the following value event, and
+      // onObjectEnd/onArrayEnd/onError leave the tree as-is.
+      default:
+        return false;
+    }
+  }
+
+  return new TransformStream<JSONParserOutput, any>({
+    transform(chunk, controller) {
+      if (apply(chunk)) {
+        controller.enqueue(value);
       }
-
-      // Create nested object at specified path
-      setAtPath(acc, path, {});
-    }
-
-    if (chunk.type === "onObjectEnd") {
-      // Nothing special needed for object end
-    }
-
-    if (chunk.type === "onObjectProperty") {
-      // Property names are already handled in onLiteralValue
-    }
-
-    if (chunk.type === "onArrayBegin") {
-      const { path } = chunk;
-      if (path.length === 0) {
-        // Top-level array
-        return acc === null ? [] : acc;
-      }
-
-      // Create nested array at specified path
-      setAtPath(acc, path, []);
-    }
-
-    if (chunk.type === "onArrayEnd") {
-      // Nothing special needed for array end
-    }
-
-    return acc;
-  }, null as any);
+    },
+  });
 }

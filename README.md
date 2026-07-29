@@ -80,11 +80,12 @@ console.log(output); // [6, 8]
 - `every()`
 - `find()`
 - `extractDelimiter()`
+- `extractFrontmatter()`
 
 ### Streaming JSON
 
 `parseJSON()` tokenizes and parses JSON incrementally and emits visit events.
-`jsonToJSObject()` folds those events back into a plain JavaScript value.
+`jsonToJSObject()` folds those events back into a plain JavaScript value, emitting the value reconstructed so far every time it changes. Add `takeLast(1)` when you only want the completed document.
 
 It is intentionally tolerant of JSONC-style input such as comments and trailing commas.
 When parsing LLM/tool-call streams, pass `{ emitPartialStrings: true }` to emit `onPartialLiteralValue` events for open string literals at chunk boundaries.
@@ -120,6 +121,24 @@ const events = await collect(
 console.log(events);
 // includes { type: "onPartialLiteralValue", value: "str", path: ["name"] }
 ```
+
+Because it emits as it goes, `jsonToJSObject()` is useful for rendering a tool call while its arguments are still arriving. Combined with `emitPartialStrings`, a string shows up as it grows:
+
+```ts
+import { arrayStream, collect, jsonToJSObject, map, parseJSON } from "@withremyinc/stream";
+
+const snapshots = await collect(
+  arrayStream(['{"text":"Hel', 'lo","done":true}'])
+    .pipeThrough(parseJSON({ emitPartialStrings: true }))
+    .pipeThrough(jsonToJSObject())
+    .pipeThrough(map((value) => structuredClone(value))),
+);
+
+console.log(snapshots);
+// [{}, { text: "Hel" }, { text: "Hello" }, { text: "Hello", done: true }]
+```
+
+Note the `map(structuredClone)`. **Every emission is the same live accumulator, not a copy.** That is what makes emitting on every event free — reconstructing a large document costs the same as it did when only the final value was emitted — but it means the object you receive keeps changing as the rest of the input arrives. Copy anything you retain (a `structuredClone`, a spread, your framework's state setter) and treat emitted values as read-only. Without the copy above, all four entries would read as the completed value.
 
 ### Streaming XML
 
@@ -177,6 +196,40 @@ const body = await collectToString(
 
 console.log(body); // {"ok": true}\n
 ```
+
+## Frontmatter extraction
+
+`extractFrontmatter()` splits a Markdown-style frontmatter header from the body that follows it, emitting the header as soon as its closing delimiter arrives and then forwarding body text as deltas. The header comes through as raw text, so no YAML parser is bundled and none is implied — parse it however you like where you consume it.
+
+```ts
+import {
+  arrayStream,
+  collect,
+  extractFrontmatter,
+} from "@withremyinc/stream";
+
+const events = await collect(
+  arrayStream(["---\nbehav", "ior: reply\n---\nHel", "lo"]).pipeThrough(
+    extractFrontmatter(),
+  ),
+);
+
+console.log(events);
+// [
+//   { type: "onFrontmatter", raw: "behavior: reply" },
+//   { type: "onBody", value: "Hel" },
+//   { type: "onBody", value: "lo" },
+// ]
+```
+
+```ts
+for await (const event of stream.pipeThrough(extractFrontmatter())) {
+  if (event.type === "onFrontmatter") meta = YAML.parse(event.raw);
+  else render(event.value);
+}
+```
+
+Delimiters are recognized only as complete lines and may be split across any number of chunks. End of input counts as a line boundary, so a metadata-only response whose closing `---` is the last thing in the stream is valid without a trailing newline. The stream errors if the opening delimiter is missing, if the header is still open at end of input, or if the header grows past `maxHeaderChars` (65536 by default).
 
 ## Development
 
