@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-10-06
+
 ### Added
 
 - The `thinking-in-streams` agent skill, with installation guidance and references for the package API, chunk-boundary-safe transforms, and permissive incremental parsing.
