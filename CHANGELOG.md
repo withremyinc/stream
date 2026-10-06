@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- `pipeThrough()` now rejects the consumer when a composed transform fails instead of hanging and emitting an unhandled rejection. ([#7](https://github.com/withremyinc/stream/issues/7))
+- `merge()` and `mergeKeyed()` now pull from their sources on demand, preserving downstream backpressure instead of buffering the full input. ([#8](https://github.com/withremyinc/stream/issues/8))
+- `parseXML()` and `extractXML()` now reject the writer when a downstream stage fails instead of hanging on backpressure. ([#10](https://github.com/withremyinc/stream/issues/10))
+
 ## [2.0.0] - 2026-07-28
 
 ### Changed

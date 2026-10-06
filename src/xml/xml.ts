@@ -28,16 +28,10 @@ function composeTransforms<In, Mid, Out>(
   first: TransformStream<In, Mid>,
   second: TransformStream<Mid, Out>,
 ): TransformStream<In, Out> {
-  void first.readable
-    .pipeTo(second.writable, {
-      preventCancel: true,
-    })
-    .catch(() => {});
-
   return {
     writable: first.writable,
-    readable: second.readable,
-  } as TransformStream<In, Out>;
+    readable: first.readable.pipeThrough(second),
+  };
 }
 
 export function parseXML(

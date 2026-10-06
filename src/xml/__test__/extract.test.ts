@@ -4,6 +4,7 @@ import { arrayStream, collect } from "../../index";
 import { ParseErrorCode } from "../parser";
 import {
   extractXML,
+  parseXML,
   type XMLExtractOptions,
   type XMLExtractOutput,
 } from "../xml";
@@ -188,4 +189,34 @@ describe("extractXML", () => {
       { type: "onElementEnd", name: "test" },
     ]);
   });
+
+  // Regression: https://github.com/withremyinc/stream/issues/10
+  test.each([
+    ["extractXML", () => extractXML({ allowTags: ["x"], textMode: "delta" })],
+    ["parseXML", () => parseXML()],
+  ])(
+    "%s rejects its writer when a downstream stage fails",
+    async (_name, makeStage) => {
+      const stage = makeStage();
+      const failing = new TransformStream({
+        transform() {
+          throw new Error("stage exploded");
+        },
+      });
+      void stage.readable
+        .pipeThrough(failing)
+        .pipeTo(new WritableStream())
+        .catch(() => {});
+
+      const writer = stage.writable.getWriter();
+      const writes = (async () => {
+        for (const char of `<x>${"a".repeat(200)}</x>`) {
+          await writer.write(char);
+        }
+        await writer.close();
+      })();
+
+      await expect(writes).rejects.toThrow("stage exploded");
+    },
+  );
 });

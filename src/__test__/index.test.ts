@@ -19,6 +19,38 @@ function delayedStream<T>(items: T[], delayMs = 5): ReadableStream<T> {
   });
 }
 
+async function measureProducerLead<T>(
+  build: (source: ReadableStream<number>) => ReadableStream<T>,
+): Promise<number> {
+  const itemCount = 50;
+  let produced = 0;
+  let consumed = 0;
+  let maxLead = 0;
+
+  const source = new ReadableStream<number>({
+    pull(controller) {
+      if (produced === itemCount) {
+        controller.close();
+        return;
+      }
+      produced++;
+      maxLead = Math.max(maxLead, produced - consumed);
+      controller.enqueue(produced);
+    },
+  });
+
+  await build(source).pipeTo(
+    new WritableStream({
+      async write() {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        consumed++;
+      },
+    }),
+  );
+
+  return maxLead;
+}
+
 // Helper: emits `items` (synchronously, on start) then errors the stream.
 function failAfter<T>(items: T[], error: Error): ReadableStream<T> {
   return new ReadableStream<T>({
@@ -110,6 +142,20 @@ describe("index exports", () => {
       const mergedStream = merge([stream1]);
       const result = await collect(mergedStream);
       expect(result).toEqual([1, 2, 3]);
+    });
+
+    // Regression: https://github.com/withremyinc/stream/issues/8
+    it("should propagate backpressure to its sources", async () => {
+      const maxLead = await measureProducerLead((source) => merge([source]));
+      expect(maxLead).toBeLessThanOrEqual(4);
+    });
+
+    it("should not let an idle source block ready sources", async () => {
+      const idle = new ReadableStream<number>({ pull() {} });
+      const reader = merge([idle, arrayStream([42])]).getReader();
+
+      await expect(reader.read()).resolves.toEqual({ done: false, value: 42 });
+      await reader.cancel();
     });
 
     // Regression: https://github.com/withremyinc/stream/issues/2
@@ -316,6 +362,23 @@ describe("index exports", () => {
       const piped = source.pipeThrough(pipeThrough(upper, brackets));
       const result = await collect(piped);
       expect(result).toEqual(["[A]", "[B]"]);
+    });
+
+    // Regression: https://github.com/withremyinc/stream/issues/7
+    it("should reject the consumer when a composed transform throws", async () => {
+      const exploding = new TransformStream<string, string>({
+        transform(chunk, controller) {
+          if (chunk === "B") throw new Error("stage exploded");
+          controller.enqueue(chunk);
+        },
+      });
+      const result = collect(
+        arrayStream(["a", "b", "c"]).pipeThrough(
+          pipeThrough(toUpperCaseTransform<string>(), exploding),
+        ),
+      );
+
+      await expect(result).rejects.toThrow("stage exploded");
     });
 
     it("should pipe through multiple transforms with different types", async () => {
