@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- The `thinking-in-streams` agent skill, with installation guidance and references for the package API, chunk-boundary-safe transforms, and permissive incremental parsing.
+
 ### Fixed
 
 - `pipeThrough()` now rejects the consumer when a composed transform fails instead of hanging and emitting an unhandled rejection. ([#7](https://github.com/withremyinc/stream/issues/7))

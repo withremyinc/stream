@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Agent Skill — @withremyinc/stream</title>
+  <title>Thinking in Streams skill — @withremyinc/stream</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap');
     @font-face {
@@ -559,8 +559,6 @@
       color: var(--ink);
     }
     .callout strong { color: var(--ink); }
-    .callout-draft { background: var(--cream-soft); }
-    .callout-draft p { margin: 8px 0 0; color: var(--text-secondary); font-size: 14px; }
 
     /* Mobile */
     @media (max-width: 768px) {
@@ -604,13 +602,23 @@
           <li><a href="skill.html" aria-current="page" class="is-active">Agent Skill</a></li>
         </ul>
       </div>
+      <div class="nav-group">
+        <span class="nav-group-title">On this page</span>
+        <ul>
+          <li><a href="#install">Install</a></li>
+          <li><a href="#skill-model">What it teaches</a></li>
+          <li><a href="#skill-rules">Core rules</a></li>
+          <li><a href="#skill-references">Included references</a></li>
+          <li><a href="#skill-source">Source of truth</a></li>
+        </ul>
+      </div>
     </div>
   </nav>
   <main class="main">
-    
+
     <header class="hero-header">
-      <h1 class="hero-title">Agent Skill</h1>
-      <p class="hero-subtitle">A drop-in skill that teaches AI coding agents how to reason about Web Streams and use <code>@withremyinc/stream</code> correctly.</p>
+      <h1 class="hero-title">Thinking in Streams skill</h1>
+      <p class="hero-subtitle">Drop-in instructions that teach coding agents to build Web Streams pipelines without losing backpressure, cancellation, or errors.</p>
     </header>
     <nav class="toc-card" aria-label="Site pages">
       <span class="toc-card-label">Start here</span>
@@ -636,22 +644,67 @@
         <span class="toc-item-arrow" aria-hidden="true">→</span>
       </a>
     </nav>
-    <section class="api-section">
-      <div class="prose">
-        <div class="callout callout-draft">
-          <strong>✍️ This page is authored by hand.</strong>
-          <p>Agents are notoriously shaky at streams, so the skill content is written deliberately rather than generated. Drop it in below.</p>
-        </div>
-        <!-- AUTHOR: write the agent skill here.
-             Suggested structure:
-               1. When to use this skill
-               2. Core mental model (link to streams.html)
-               3. The pipeThrough / pipeTo contract
-               4. Common mistakes agents make (and the fix)
-               5. Recipes: LLM JSON streaming, line splitting, merge/fan-in
-        -->
+
+
+    <section class="api-section guide-section" id="install">
+      <div class="section-header">
+        <h2 class="section-title">Install</h2>
       </div>
+      <div class="prose">
+      <p class="lead">Add the skill to any coding agent supported by the open <a href="https://skills.sh/docs/cli" target="_blank" rel="noopener">skills CLI</a>.</p>
+      <div class="code-preview"><pre class="shiki github-light" style="background-color:#fff;color:#24292e" tabindex="0"><code><span class="line"><span style="color:#6F42C1">npx</span><span style="color:#032F62"> skills</span><span style="color:#032F62"> add</span><span style="color:#032F62"> withremyinc/stream</span></span></code></pre></div>
+      <p>The CLI discovers <code>thinking-in-streams</code> in this repository and configures it for your agent. The skill then activates for streaming implementations and reviews.</p></div>
     </section>
+
+
+    <section class="api-section guide-section" id="skill-model">
+      <div class="section-header">
+        <h2 class="section-title">What it teaches</h2>
+      </div>
+      <div class="prose">
+      <p>A streaming feature should remain one unbroken chain of <code>TransformStream</code> stages from producer to consumer. Each stage adds domain behavior while native piping carries demand, cancellation, and failures in both directions.</p>
+      <p>The skill applies that model to LLM responses, tool-call arguments, SSE endpoints, incremental JSON and XML parsing, side effects, fan-out, and chunk-boundary-safe transforms.</p></div>
+    </section>
+
+
+    <section class="api-section guide-section" id="skill-rules">
+      <div class="section-header">
+        <h2 class="section-title">Core rules</h2>
+      </div>
+      <div class="prose">
+      <ul>
+        <li>Return fresh <code>&lt;domain&gt;Transform</code> factories with explicit input and output types.</li>
+        <li>Transform a stream you receive; create <code>ReadableStream</code> only at a true data origin.</li>
+        <li>Prefer <code>pipeThrough</code>, <code>pipeTo</code>, and library combinators over detached readers and writers.</li>
+        <li>Use <code>tee()</code> only for independent consumers; a fast branch can outrun a slow sibling.</li>
+        <li>Emit as soon as meaning is known, retain only ambiguous input, and bound every buffer.</li>
+        <li>Parse once, render incrementally, and commit the final emitted snapshot instead of reparsing.</li>
+      </ul></div>
+    </section>
+
+
+    <section class="api-section guide-section" id="skill-references">
+      <div class="section-header">
+        <h2 class="section-title">Included references</h2>
+      </div>
+      <div class="prose">
+      <ul>
+        <li><a href="https://github.com/withremyinc/stream/blob/main/skills/thinking-in-streams/references/library.md" target="_blank" rel="noopener"><strong>Library API map</strong></a> — choose the existing helper instead of hand-rolling a transform.</li>
+        <li><a href="https://github.com/withremyinc/stream/blob/main/skills/thinking-in-streams/references/chunk-boundaries.md" target="_blank" rel="noopener"><strong>Chunk-boundary patterns</strong></a> — residue, suspendable generators, bounded buffers, and split testing.</li>
+        <li><a href="https://github.com/withremyinc/stream/blob/main/skills/thinking-in-streams/references/permissive-parsing.md" target="_blank" rel="noopener"><strong>Permissive parsing</strong></a> — one incremental parse path for malformed or partial model output.</li>
+      </ul></div>
+    </section>
+
+
+    <section class="api-section guide-section" id="skill-source">
+      <div class="section-header">
+        <h2 class="section-title">Source of truth</h2>
+      </div>
+      <div class="prose">
+      <p>This page is the short overview. The versioned <a href="https://github.com/withremyinc/stream/blob/main/skills/thinking-in-streams/SKILL.md" target="_blank" rel="noopener"><code>SKILL.md</code></a> and its references are the canonical agent instructions.</p>
+      <p><a href="https://github.com/withremyinc/stream/tree/main/skills/thinking-in-streams" target="_blank" rel="noopener">Browse the complete skill on GitHub →</a></p></div>
+    </section>
+
   </main>
   <script>
     (function () {

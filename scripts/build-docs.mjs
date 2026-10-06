@@ -8,7 +8,7 @@ import { createHighlighter } from "shiki";
 
 const highlighter = await createHighlighter({
   themes: ["github-light"],
-  langs: ["typescript"],
+  langs: ["typescript", "bash"],
 });
 
 function highlight(code, lang = "typescript") {
@@ -548,7 +548,7 @@ const result = await collect(
         signature:
           "merge<T>(streams: ReadableStream<T>[]): ReadableStream<T>",
         description:
-          "Merges multiple ReadableStreams into a single stream of chunks as they arrive.",
+          "Merges multiple ReadableStreams as chunks arrive. Sources are pulled on downstream demand, and pending reads are raced so an idle source does not block ready sources.",
         marble: {
           type: "merge",
           inputs: [
@@ -580,7 +580,7 @@ const result = await collect(
         signature:
           'mergeKeyed<V>(streamsObj: { [K in keyof V]: ReadableStream<V[K]> }): ReadableStream<Partial<V>>',
         description:
-          "Merges an object of ReadableStreams into a single stream of keyed chunks.",
+          "Merges an object of ReadableStreams into keyed chunks while preserving downstream backpressure.",
         marble: {
           type: "merge",
           inputs: [
@@ -647,7 +647,7 @@ const result = await collect(
         signature:
           "pipeThrough<In, Out>(...streams: TransformStream[]): TransformStream<In, Out>",
         description:
-          "Compose N TransformStreams into a single TransformStream.",
+          "Composes TransformStreams with native piping so backpressure, cancellation, and thrown errors propagate through the full pipeline.",
         marble: {
           type: "transform",
           input: [
@@ -1814,8 +1814,6 @@ function pageShell({ title, navHtml, bodyHtml }) {
       color: var(--ink);
     }
     .callout strong { color: var(--ink); }
-    .callout-draft { background: var(--cream-soft); }
-    .callout-draft p { margin: 8px 0 0; color: var(--text-secondary); font-size: 14px; }
 
     /* Mobile */
     @media (max-width: 768px) {
@@ -2074,10 +2072,27 @@ function renderGuideNavGroups() {
     ["why", "Why streams?"],
     ["api", "The API in three nouns"],
     ["pull", "Pull, not push"],
+    ["chain", "Keep one chain"],
     ["mental-model", "A mental model"],
     ["pipeline", "Your first pipeline"],
     ["when-not", "When not to use streams"],
     ["next", "Where this library fits"],
+  ];
+  let html = `\n      <div class="nav-group">\n        <span class="nav-group-title">On this page</span>\n        <ul>`;
+  for (const [id, label] of sections) {
+    html += `\n          <li><a href="#${id}">${escapeHtml(label)}</a></li>`;
+  }
+  html += `\n        </ul>\n      </div>`;
+  return html;
+}
+
+function renderSkillNavGroups() {
+  const sections = [
+    ["install", "Install"],
+    ["skill-model", "What it teaches"],
+    ["skill-rules", "Core rules"],
+    ["skill-references", "Included references"],
+    ["skill-source", "Source of truth"],
   ];
   let html = `\n      <div class="nav-group">\n        <span class="nav-group-title">On this page</span>\n        <ul>`;
   for (const [id, label] of sections) {
@@ -2099,10 +2114,11 @@ function guideSection(id, title, inner) {
 
 function renderGuideBody() {
   const ex1 = highlight(`// A stream is values arriving over time — not all at once.
-const lines = fetch("/big.log")
-  .then(r => r.body)               // ReadableStream<Uint8Array>
+const response = await fetch("/big.log");
+if (!response.body) throw new Error("Response has no body");
+const lines = response.body
   .pipeThrough(new TextDecoderStream())
-  .pipeThrough(splitLines());      // ReadableStream<string>`);
+  .pipeThrough(splitLines()); // ReadableStream<string>`);
 
   const ex2 = highlight(`import { arrayStream, collect, filter, map } from "@withremyinc/stream";
 
@@ -2154,6 +2170,14 @@ modelStream
         If you've ever written code that loaded a 2&nbsp;GB file into an array and watched the process OOM, backpressure is the thing you were missing.
       </div>`)}
 
+    ${guideSection("chain", "Keep one chain", `
+      <p>Backpressure, cancellation, and errors travel through <code>pipeThrough</code> and <code>pipeTo</code>. Keep those links unbroken from the source to the thing doing the observable work.</p>
+      <p>If an API hands you a <code>ReadableStream</code>, transform it directly. Re-wrapping it in <code>new ReadableStream()</code>, driving it with a detached writer, or collecting and re-emitting it replaces the platform's plumbing with a queue you now have to manage.</p>
+      <div class="callout">
+        <strong>The practical rule:</strong> if you have a stream, pipe it; if you are creating the original source, make a <code>ReadableStream</code>; if you are at the terminal edge, consume it.
+      </div>
+      <p>The <a href="skill.html">agent skill</a> turns this model into concrete review rules for production pipelines, side branches, incremental parsers, and LLM output.</p>`)}
+
     ${guideSection("mental-model", "A mental model: arrays you can't see all at once", `
       <p>The most useful trick is to picture a stream as an <strong>array stretched out across time</strong>. You can't index into it or call <code>.length</code> — you only ever see one element at the "now" line — but the operations you already know still apply:</p>
       <ul>
@@ -2184,28 +2208,49 @@ modelStream
 }
 
 function renderSkillBody() {
+  const install = highlight("npx skills add withremyinc/stream", "bash");
+  const skillDirectory =
+    "https://github.com/withremyinc/stream/tree/main/skills/thinking-in-streams";
+  const skillSource =
+    "https://github.com/withremyinc/stream/blob/main/skills/thinking-in-streams";
+
   return `
     <header class="hero-header">
-      <h1 class="hero-title">Agent Skill</h1>
-      <p class="hero-subtitle">A drop-in skill that teaches AI coding agents how to reason about Web Streams and use <code>@withremyinc/stream</code> correctly.</p>
+      <h1 class="hero-title">Thinking in Streams skill</h1>
+      <p class="hero-subtitle">Drop-in instructions that teach coding agents to build Web Streams pipelines without losing backpressure, cancellation, or errors.</p>
     </header>
     ${renderTocCard("skill")}
-    <section class="api-section">
-      <div class="prose">
-        <div class="callout callout-draft">
-          <strong>✍️ This page is authored by hand.</strong>
-          <p>Agents are notoriously shaky at streams, so the skill content is written deliberately rather than generated. Drop it in below.</p>
-        </div>
-        <!-- AUTHOR: write the agent skill here.
-             Suggested structure:
-               1. When to use this skill
-               2. Core mental model (link to streams.html)
-               3. The pipeThrough / pipeTo contract
-               4. Common mistakes agents make (and the fix)
-               5. Recipes: LLM JSON streaming, line splitting, merge/fan-in
-        -->
-      </div>
-    </section>`;
+
+    ${guideSection("install", "Install", `
+      <p class="lead">Add the skill to any coding agent supported by the open <a href="https://skills.sh/docs/cli" target="_blank" rel="noopener">skills CLI</a>.</p>
+      <div class="code-preview">${install}</div>
+      <p>The CLI discovers <code>thinking-in-streams</code> in this repository and configures it for your agent. The skill then activates for streaming implementations and reviews.</p>`)}
+
+    ${guideSection("skill-model", "What it teaches", `
+      <p>A streaming feature should remain one unbroken chain of <code>TransformStream</code> stages from producer to consumer. Each stage adds domain behavior while native piping carries demand, cancellation, and failures in both directions.</p>
+      <p>The skill applies that model to LLM responses, tool-call arguments, SSE endpoints, incremental JSON and XML parsing, side effects, fan-out, and chunk-boundary-safe transforms.</p>`)}
+
+    ${guideSection("skill-rules", "Core rules", `
+      <ul>
+        <li>Return fresh <code>&lt;domain&gt;Transform</code> factories with explicit input and output types.</li>
+        <li>Transform a stream you receive; create <code>ReadableStream</code> only at a true data origin.</li>
+        <li>Prefer <code>pipeThrough</code>, <code>pipeTo</code>, and library combinators over detached readers and writers.</li>
+        <li>Use <code>tee()</code> only for independent consumers; a fast branch can outrun a slow sibling.</li>
+        <li>Emit as soon as meaning is known, retain only ambiguous input, and bound every buffer.</li>
+        <li>Parse once, render incrementally, and commit the final emitted snapshot instead of reparsing.</li>
+      </ul>`)}
+
+    ${guideSection("skill-references", "Included references", `
+      <ul>
+        <li><a href="${skillSource}/references/library.md" target="_blank" rel="noopener"><strong>Library API map</strong></a> — choose the existing helper instead of hand-rolling a transform.</li>
+        <li><a href="${skillSource}/references/chunk-boundaries.md" target="_blank" rel="noopener"><strong>Chunk-boundary patterns</strong></a> — residue, suspendable generators, bounded buffers, and split testing.</li>
+        <li><a href="${skillSource}/references/permissive-parsing.md" target="_blank" rel="noopener"><strong>Permissive parsing</strong></a> — one incremental parse path for malformed or partial model output.</li>
+      </ul>`)}
+
+    ${guideSection("skill-source", "Source of truth", `
+      <p>This page is the short overview. The versioned <a href="${skillSource}/SKILL.md" target="_blank" rel="noopener"><code>SKILL.md</code></a> and its references are the canonical agent instructions.</p>
+      <p><a href="${skillDirectory}" target="_blank" rel="noopener">Browse the complete skill on GitHub →</a></p>`)}
+  `;
 }
 
 // ─── index.html (API reference) ─────────────────────────────────────────────
@@ -2239,16 +2284,23 @@ const guideHtml = pageShell({
   bodyHtml: renderGuideBody(),
 });
 
-// ─── skill.html (authored separately) ───────────────────────────────────────
+// ─── skill.html (agent skill overview) ──────────────────────────────────────
 
 const skillHtml = pageShell({
-  title: "Agent Skill — @withremyinc/stream",
-  navHtml: renderSidebar({ active: "skill" }),
+  title: "Thinking in Streams skill — @withremyinc/stream",
+  navHtml: renderSidebar({
+    active: "skill",
+    groupsHtml: renderSkillNavGroups(),
+  }),
   bodyHtml: renderSkillBody(),
 });
 
+function writeHtml(path, html) {
+  writeFileSync(path, html.replace(/[ \t]+$/gm, ""));
+}
+
 mkdirSync("docs", { recursive: true });
-writeFileSync("docs/index.html", indexHtml);
-writeFileSync("docs/streams.html", guideHtml);
-writeFileSync("docs/skill.html", skillHtml);
+writeHtml("docs/index.html", indexHtml);
+writeHtml("docs/streams.html", guideHtml);
+writeHtml("docs/skill.html", skillHtml);
 console.log("✅ docs/index.html, docs/streams.html, docs/skill.html generated");

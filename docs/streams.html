@@ -559,8 +559,6 @@
       color: var(--ink);
     }
     .callout strong { color: var(--ink); }
-    .callout-draft { background: var(--cream-soft); }
-    .callout-draft p { margin: 8px 0 0; color: var(--text-secondary); font-size: 14px; }
 
     /* Mobile */
     @media (max-width: 768px) {
@@ -610,6 +608,7 @@
           <li><a href="#why">Why streams?</a></li>
           <li><a href="#api">The API in three nouns</a></li>
           <li><a href="#pull">Pull, not push</a></li>
+          <li><a href="#chain">Keep one chain</a></li>
           <li><a href="#mental-model">A mental model</a></li>
           <li><a href="#pipeline">Your first pipeline</a></li>
           <li><a href="#when-not">When not to use streams</a></li>
@@ -619,7 +618,7 @@
     </div>
   </nav>
   <main class="main">
-    
+
     <header class="hero-header guide-hero">
       <h1 class="hero-title">Thinking in Streams</h1>
       <p class="hero-subtitle">A short, friendly mental model for the Web Streams API — and how this library helps you work with data that arrives over time.</p>
@@ -649,7 +648,7 @@
       </a>
     </nav>
 
-    
+
     <section class="api-section guide-section" id="why">
       <div class="section-header">
         <h2 class="section-title">Why streams?</h2>
@@ -662,7 +661,7 @@
       </div></div>
     </section>
 
-    
+
     <section class="api-section guide-section" id="api">
       <div class="section-header">
         <h2 class="section-title">The API in three nouns</h2>
@@ -676,14 +675,15 @@
       </ul>
       <p>And one verb that connects them: <code>.pipeThrough()</code> for transforms, <code>.pipeTo()</code> for a final sink.</p>
       <div class="code-preview"><pre class="shiki github-light" style="background-color:#fff;color:#24292e" tabindex="0"><code><span class="line"><span style="color:#6A737D">// A stream is values arriving over time — not all at once.</span></span>
-<span class="line"><span style="color:#D73A49">const</span><span style="color:#005CC5"> lines</span><span style="color:#D73A49"> =</span><span style="color:#6F42C1"> fetch</span><span style="color:#24292E">(</span><span style="color:#032F62">"/big.log"</span><span style="color:#24292E">)</span></span>
-<span class="line"><span style="color:#24292E">  .</span><span style="color:#6F42C1">then</span><span style="color:#24292E">(</span><span style="color:#E36209">r</span><span style="color:#D73A49"> =></span><span style="color:#24292E"> r.body)               </span><span style="color:#6A737D">// ReadableStream&#x3C;Uint8Array></span></span>
+<span class="line"><span style="color:#D73A49">const</span><span style="color:#005CC5"> response</span><span style="color:#D73A49"> =</span><span style="color:#D73A49"> await</span><span style="color:#6F42C1"> fetch</span><span style="color:#24292E">(</span><span style="color:#032F62">"/big.log"</span><span style="color:#24292E">);</span></span>
+<span class="line"><span style="color:#D73A49">if</span><span style="color:#24292E"> (</span><span style="color:#D73A49">!</span><span style="color:#24292E">response.body) </span><span style="color:#D73A49">throw</span><span style="color:#D73A49"> new</span><span style="color:#6F42C1"> Error</span><span style="color:#24292E">(</span><span style="color:#032F62">"Response has no body"</span><span style="color:#24292E">);</span></span>
+<span class="line"><span style="color:#D73A49">const</span><span style="color:#005CC5"> lines</span><span style="color:#D73A49"> =</span><span style="color:#24292E"> response.body</span></span>
 <span class="line"><span style="color:#24292E">  .</span><span style="color:#6F42C1">pipeThrough</span><span style="color:#24292E">(</span><span style="color:#D73A49">new</span><span style="color:#6F42C1"> TextDecoderStream</span><span style="color:#24292E">())</span></span>
-<span class="line"><span style="color:#24292E">  .</span><span style="color:#6F42C1">pipeThrough</span><span style="color:#24292E">(</span><span style="color:#6F42C1">splitLines</span><span style="color:#24292E">());      </span><span style="color:#6A737D">// ReadableStream&#x3C;string></span></span></code></pre></div>
+<span class="line"><span style="color:#24292E">  .</span><span style="color:#6F42C1">pipeThrough</span><span style="color:#24292E">(</span><span style="color:#6F42C1">splitLines</span><span style="color:#24292E">()); </span><span style="color:#6A737D">// ReadableStream&#x3C;string></span></span></code></pre></div>
       <p>That's the whole shape: <strong>source → transform → transform → sink</strong>. Everything in this library is just a nicely-typed source, transform, or collector you can drop into that chain.</p></div>
     </section>
 
-    
+
     <section class="api-section guide-section" id="pull">
       <div class="section-header">
         <h2 class="section-title">Pull, not push (a.k.a. backpressure)</h2>
@@ -696,7 +696,21 @@
       </div></div>
     </section>
 
-    
+
+    <section class="api-section guide-section" id="chain">
+      <div class="section-header">
+        <h2 class="section-title">Keep one chain</h2>
+      </div>
+      <div class="prose">
+      <p>Backpressure, cancellation, and errors travel through <code>pipeThrough</code> and <code>pipeTo</code>. Keep those links unbroken from the source to the thing doing the observable work.</p>
+      <p>If an API hands you a <code>ReadableStream</code>, transform it directly. Re-wrapping it in <code>new ReadableStream()</code>, driving it with a detached writer, or collecting and re-emitting it replaces the platform's plumbing with a queue you now have to manage.</p>
+      <div class="callout">
+        <strong>The practical rule:</strong> if you have a stream, pipe it; if you are creating the original source, make a <code>ReadableStream</code>; if you are at the terminal edge, consume it.
+      </div>
+      <p>The <a href="skill.html">agent skill</a> turns this model into concrete review rules for production pipelines, side branches, incremental parsers, and LLM output.</p></div>
+    </section>
+
+
     <section class="api-section guide-section" id="mental-model">
       <div class="section-header">
         <h2 class="section-title">A mental model: arrays you can't see all at once</h2>
@@ -712,7 +726,7 @@
       <p>That's why the marble diagrams in the <a href="index.html">API reference</a> are worth a look: each one shows values flowing left-to-right along a timeline, so you can <em>see</em> what a transform does instead of decoding a type signature.</p></div>
     </section>
 
-    
+
     <section class="api-section guide-section" id="pipeline">
       <div class="section-header">
         <h2 class="section-title">Your first pipeline</h2>
@@ -738,7 +752,7 @@
 <span class="line"><span style="color:#24292E">  .</span><span style="color:#6F42C1">pipeTo</span><span style="color:#24292E">(</span><span style="color:#6F42C1">renderAsItStreams</span><span style="color:#24292E">());</span></span></code></pre></div></div>
     </section>
 
-    
+
     <section class="api-section guide-section" id="when-not">
       <div class="section-header">
         <h2 class="section-title">When not to use streams</h2>
@@ -752,7 +766,7 @@
       </ul></div>
     </section>
 
-    
+
     <section class="api-section guide-section" id="next">
       <div class="section-header">
         <h2 class="section-title">Where this library fits</h2>

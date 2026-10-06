@@ -40,6 +40,23 @@ const output = await collect(
 console.log(output); // [6, 8]
 ```
 
+## Agent skill
+
+Install the bundled `thinking-in-streams` skill in compatible coding agents:
+
+```bash
+npx skills add withremyinc/stream
+```
+
+The skill teaches agents to preserve backpressure, cancellation, and error propagation; handle
+arbitrary chunk boundaries; and use the package's incremental JSON and XML parsers instead of
+rebuilding stream plumbing by hand.
+
+- [Skill instructions](./skills/thinking-in-streams/SKILL.md)
+- [Library API map](./skills/thinking-in-streams/references/library.md)
+- [Chunk-boundary patterns](./skills/thinking-in-streams/references/chunk-boundaries.md)
+- [Permissive parsing guidance](./skills/thinking-in-streams/references/permissive-parsing.md)
+
 ## What is included?
 
 ### Stream helpers

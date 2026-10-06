@@ -559,8 +559,6 @@
       color: var(--ink);
     }
     .callout strong { color: var(--ink); }
-    .callout-draft { background: var(--cream-soft); }
-    .callout-draft p { margin: 8px 0 0; color: var(--text-secondary); font-size: 14px; }
 
     /* Mobile */
     @media (max-width: 768px) {
@@ -680,7 +678,7 @@
     </div>
   </nav>
   <main class="main">
-    
+
     <header class="hero-header">
       <h1 class="hero-title">@withremyinc/<wbr>stream</h1>
       <p class="hero-subtitle">Composable Web Streams utilities with streaming JSON and XML parsing.</p>
@@ -709,13 +707,13 @@
         <span class="toc-item-arrow" aria-hidden="true">→</span>
       </a>
     </nav>
-    
+
     <section class="api-section" id="cat-sources">
       <div class="section-header">
         <h2 class="section-title">Sources</h2>
         <p class="section-subtitle">Create ReadableStreams from data</p>
       </div>
-      
+
     <div class="api-item" id="arrayStream">
       <h3 class="api-name"><a href="#arrayStream">arrayStream</a></h3>
       <p class="api-description">Create a ReadableStream from an array of items.</p>
@@ -742,7 +740,7 @@
         <h2 class="section-title">Transforms</h2>
         <p class="section-subtitle">TransformStreams that process chunks</p>
       </div>
-      
+
     <div class="api-item" id="map">
       <h3 class="api-name"><a href="#map">map</a></h3>
       <p class="api-description">Applies a synchronous or asynchronous mapper to each chunk.</p>
@@ -1288,10 +1286,10 @@
         <h2 class="section-title">Combinators</h2>
         <p class="section-subtitle">Merge and compose streams</p>
       </div>
-      
+
     <div class="api-item" id="merge">
       <h3 class="api-name"><a href="#merge">merge</a></h3>
-      <p class="api-description">Merges multiple ReadableStreams into a single stream of chunks as they arrive.</p>
+      <p class="api-description">Merges multiple ReadableStreams as chunks arrive. Sources are pulled on downstream demand, and pending reads are raced so an idle source does not block ready sources.</p>
       <div class="api-signature"><pre class="shiki github-light" style="background-color:#fff;color:#24292e" tabindex="0"><code><span class="line"><span style="color:#6F42C1">merge</span><span style="color:#24292E">&#x3C;</span><span style="color:#6F42C1">T</span><span style="color:#24292E">>(streams: ReadableStream</span><span style="color:#D73A49">&#x3C;</span><span style="color:#005CC5">T</span><span style="color:#D73A49">></span><span style="color:#24292E">[]): ReadableStream</span><span style="color:#D73A49">&#x3C;</span><span style="color:#005CC5">T</span><span style="color:#D73A49">></span></span></code></pre></div>
       <div class="api-visual"><div class="marble-diagram"><svg viewBox="0 0 520 174" class="marble-svg"><text x="50" y="25" text-anchor="end" dominant-baseline="central" font-size="11" font-family="Menlo, Consolas, Monaco, Adwaita Mono, Liberation Mono, Lucida Console, monospace" fill="#a99fa2" font-weight="500">a</text><line x1="60" y1="24" x2="496" y2="24" stroke="#6b5d62" stroke-width="2"/><polygon points="496,19 504,24 496,29" fill="#6b5d62"/><line x1="506" y1="14" x2="506" y2="34" stroke="#6b5d62" stroke-width="2"/><g class="marble-item">
       <circle cx="103.6" cy="24" r="16" fill="#f37d39" stroke="#f37d39" stroke-width="2"/>
@@ -1327,7 +1325,7 @@
 
     <div class="api-item" id="mergeKeyed">
       <h3 class="api-name"><a href="#mergeKeyed">mergeKeyed</a></h3>
-      <p class="api-description">Merges an object of ReadableStreams into a single stream of keyed chunks.</p>
+      <p class="api-description">Merges an object of ReadableStreams into keyed chunks while preserving downstream backpressure.</p>
       <div class="api-signature"><pre class="shiki github-light" style="background-color:#fff;color:#24292e" tabindex="0"><code><span class="line"><span style="color:#6F42C1">mergeKeyed</span><span style="color:#24292E">&#x3C;</span><span style="color:#6F42C1">V</span><span style="color:#24292E">>(streamsObj: { [</span><span style="color:#005CC5">K</span><span style="color:#D73A49"> in</span><span style="color:#24292E"> keyof </span><span style="color:#005CC5">V</span><span style="color:#24292E">]: ReadableStream</span><span style="color:#D73A49">&#x3C;</span><span style="color:#005CC5">V</span><span style="color:#24292E">[</span><span style="color:#005CC5">K</span><span style="color:#24292E">]</span><span style="color:#D73A49">></span><span style="color:#24292E"> }): ReadableStream</span><span style="color:#D73A49">&#x3C;</span><span style="color:#24292E">Partial</span><span style="color:#D73A49">&#x3C;</span><span style="color:#005CC5">V</span><span style="color:#D73A49">>></span></span></code></pre></div>
       <div class="api-visual"><div class="marble-diagram"><svg viewBox="0 0 520 174" class="marble-svg"><text x="50" y="25" text-anchor="end" dominant-baseline="central" font-size="11" font-family="Menlo, Consolas, Monaco, Adwaita Mono, Liberation Mono, Lucida Console, monospace" fill="#a99fa2" font-weight="500">a</text><line x1="60" y1="24" x2="496" y2="24" stroke="#6b5d62" stroke-width="2"/><polygon points="496,19 504,24 496,29" fill="#6b5d62"/><line x1="506" y1="14" x2="506" y2="34" stroke="#6b5d62" stroke-width="2"/><g class="marble-item">
       <circle cx="103.6" cy="24" r="16" fill="#f37d39" stroke="#f37d39" stroke-width="2"/>
@@ -1402,7 +1400,7 @@
 
     <div class="api-item" id="pipeThrough">
       <h3 class="api-name"><a href="#pipeThrough">pipeThrough</a></h3>
-      <p class="api-description">Compose N TransformStreams into a single TransformStream.</p>
+      <p class="api-description">Composes TransformStreams with native piping so backpressure, cancellation, and thrown errors propagate through the full pipeline.</p>
       <div class="api-signature"><pre class="shiki github-light" style="background-color:#fff;color:#24292e" tabindex="0"><code><span class="line"><span style="color:#6F42C1">pipeThrough</span><span style="color:#24292E">&#x3C;</span><span style="color:#6F42C1">In</span><span style="color:#24292E">, </span><span style="color:#6F42C1">Out</span><span style="color:#24292E">>(</span><span style="color:#D73A49">...</span><span style="color:#24292E">streams: TransformStream[]): TransformStream</span><span style="color:#D73A49">&#x3C;</span><span style="color:#24292E">In, Out</span><span style="color:#D73A49">></span></span></code></pre></div>
       <div class="api-visual"><div class="marble-diagram"><svg viewBox="0 0 520 164" class="marble-svg"><text x="50" y="25" text-anchor="end" dominant-baseline="central" font-size="11" font-family="Menlo, Consolas, Monaco, Adwaita Mono, Liberation Mono, Lucida Console, monospace" fill="#a99fa2" font-weight="500">input</text><line x1="60" y1="24" x2="496" y2="24" stroke="#6b5d62" stroke-width="2"/><polygon points="496,19 504,24 496,29" fill="#6b5d62"/><line x1="506" y1="14" x2="506" y2="34" stroke="#6b5d62" stroke-width="2"/><g class="marble-item">
       <circle cx="125.39999999999999" cy="24" r="16" fill="#f37d39" stroke="#f37d39" stroke-width="2"/>
@@ -1430,7 +1428,7 @@
         <h2 class="section-title">Collectors</h2>
         <p class="section-subtitle">Consume streams into values</p>
       </div>
-      
+
     <div class="api-item" id="collect">
       <h3 class="api-name"><a href="#collect">collect</a></h3>
       <p class="api-description">Consumes a ReadableStream and returns an array of all chunks.</p>
@@ -1513,7 +1511,7 @@
         <h2 class="section-title">Parsers</h2>
         <p class="section-subtitle">Streaming JSON &amp; XML parsing</p>
       </div>
-      
+
     <div class="api-item" id="parseJSON">
       <h3 class="api-name"><a href="#parseJSON">parseJSON</a></h3>
       <p class="api-description">Streaming JSON/JSONC parser. Emits SAX-style events (onObjectBegin, onObjectEnd, onArrayBegin, onArrayEnd, onLiteralValue, onObjectProperty, onError) with full JSONPath tracking. Pass <code>{ emitPartialStrings: true }</code> to also emit onPartialLiteralValue events for open strings at chunk boundaries (useful for LLM token streams).</p>
@@ -1643,7 +1641,7 @@
         <h2 class="section-title">Types</h2>
         <p class="section-subtitle">Shared type definitions</p>
       </div>
-      
+
         <div class="api-item" id="type-JSONParserOutput">
           <div class="api-header">
             <span class="api-name"><a href="#type-JSONParserOutput">JSONParserOutput</a></span>
